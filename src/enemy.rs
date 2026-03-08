@@ -71,8 +71,8 @@ fn spawn_enemies(
 
         // Seed each enemy differently so they wander in different directions
         // from the first frame.
-        let seed = lcg(((gx as u32).wrapping_mul(1_664_525))
-            .wrapping_add((gy as u32).wrapping_mul(1_013_904_223)));
+        let seed = lcg(((gx as u32).wrapping_mul(LCG_MUL))
+            .wrapping_add((gy as u32).wrapping_mul(LCG_INC)));
         let angle = (seed % 628) as f32 / 100.0; // 0 .. ~2π
 
         commands.spawn((

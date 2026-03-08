@@ -1,5 +1,7 @@
 use bevy::prelude::*;
 
+use crate::enemy::{Enemy, ENEMY_RADIUS};
+
 pub struct ProjectilePlugin;
 
 /// Speed of a water-gun projectile in world-space units per second.
@@ -8,6 +10,9 @@ const PROJECTILE_SPEED: f32 = 400.0;
 const PROJECTILE_LIFETIME: f32 = 2.5;
 /// Visual radius of the projectile in pixels.
 const PROJECTILE_RADIUS: f32 = 5.0;
+/// Combined hit radius: projectile centre must be within this distance of an
+/// enemy centre for a hit to register.
+const HIT_RADIUS: f32 = PROJECTILE_RADIUS + ENEMY_RADIUS;
 
 // ---------------------------------------------------------------------------
 // Event / component types
@@ -40,6 +45,7 @@ impl Plugin for ProjectilePlugin {
             (
                 handle_spawn_projectile,
                 move_projectiles,
+                check_projectile_hits,
                 cleanup_projectiles,
             ),
         );
@@ -93,6 +99,26 @@ fn cleanup_projectiles(
     for (entity, projectile) in &query {
         if projectile.lifetime <= 0.0 {
             commands.entity(entity).despawn_recursive();
+        }
+    }
+}
+
+/// Check every live projectile against every enemy.  On a hit, despawn both.
+fn check_projectile_hits(
+    mut commands: Commands,
+    projectile_query: Query<(Entity, &Transform), With<Projectile>>,
+    enemy_query: Query<(Entity, &Transform), With<Enemy>>,
+) {
+    for (proj_entity, proj_transform) in &projectile_query {
+        let proj_pos = proj_transform.translation.truncate();
+        for (enemy_entity, enemy_transform) in &enemy_query {
+            let enemy_pos = enemy_transform.translation.truncate();
+            if proj_pos.distance_squared(enemy_pos) < HIT_RADIUS * HIT_RADIUS {
+                commands.entity(proj_entity).despawn_recursive();
+                commands.entity(enemy_entity).despawn_recursive();
+                // Each projectile can only hit one enemy.
+                break;
+            }
         }
     }
 }

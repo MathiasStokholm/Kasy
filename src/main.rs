@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 
 mod camera;
+mod enemy;
 mod iso;
 mod player;
 mod projectile;
@@ -28,6 +29,7 @@ fn main() {
             camera::CameraPlugin,
             player::PlayerPlugin,
             projectile::ProjectilePlugin,
+            enemy::EnemyPlugin,
         ))
         .run();
 }

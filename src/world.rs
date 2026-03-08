@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use bevy::{
     image::ImageSampler,
     prelude::*,
@@ -8,13 +10,40 @@ use bevy::{
     },
 };
 
-use crate::iso::{grid_to_depth, grid_to_world, TILE_HEIGHT, TILE_WIDTH};
+use crate::iso::{grid_to_depth, grid_to_world, world_to_grid, TILE_HEIGHT, TILE_WIDTH};
 
 pub struct WorldPlugin;
 
 impl Plugin for WorldPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_world);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// WorldTiles resource
+// ---------------------------------------------------------------------------
+
+/// Set of every grid position that has a tile.  Used to test whether a
+/// world-space position is over the islands (fall detection, enemy wandering).
+#[derive(Resource, Default)]
+pub struct WorldTiles(pub HashSet<(i32, i32)>);
+
+impl WorldTiles {
+    /// Returns `true` when `world_pos` is above at least one tile.
+    ///
+    /// Tests the nearest grid position and its 8 neighbours so that the player
+    /// is not penalised for standing exactly on a tile edge.
+    pub fn is_over_tile(&self, world_pos: Vec2) -> bool {
+        let (gx, gy) = world_to_grid(world_pos);
+        for dx in -1..=1_i32 {
+            for dy in -1..=1_i32 {
+                if self.0.contains(&(gx + dx, gy + dy)) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -644,6 +673,13 @@ fn setup_world(
 
     let scale = Vec3::new(TILE_SCALE, TILE_SCALE, 1.0);
 
+    // Generate tile data once so we can both spawn geometry and build WorldTiles.
+    let tiles = generate_world();
+
+    // Populate the WorldTiles resource so other systems can look up valid positions.
+    let tile_set: HashSet<(i32, i32)> = tiles.iter().map(|(gx, gy, _)| (*gx, *gy)).collect();
+    commands.insert_resource(WorldTiles(tile_set));
+
     // Build one pixel-art texture per tile type (shared across all tiles of that type)
     const ALL_TYPES: [TileType; 12] = [
         TileType::Grass, TileType::Dirt, TileType::Rock,
@@ -658,7 +694,7 @@ fn setup_world(
         .map(|&t| images.add(generate_tile_image(t)))
         .collect();
 
-    for (gx, gy, tile_type) in generate_world() {
+    for &(gx, gy, tile_type) in &tiles {
         let pos  = grid_to_world(gx, gy);
         let z    = grid_to_depth(gx, gy);
         let base = Vec3::new(pos.x, pos.y, z);

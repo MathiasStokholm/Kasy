@@ -23,6 +23,8 @@ pub struct Player;
 const PLAYER_SPEED: f32 = 200.0;
 /// Radius of the player circle sprite in pixels.
 const PLAYER_RADIUS: f32 = 14.0;
+/// Gap between the player body edge and the start of the gun barrel.
+const BARREL_OFFSET: f32 = 11.0;
 
 // ---------------------------------------------------------------------------
 // Startup system
@@ -57,7 +59,7 @@ fn setup_player(
                 MeshMaterial2d(barrel_material),
                 // Offset the barrel forward (local +Y) by the player radius
                 // plus a small gap so it appears to protrude from the body.
-                Transform::from_xyz(0.0, PLAYER_RADIUS + 11.0, 0.5),
+                Transform::from_xyz(0.0, PLAYER_RADIUS + BARREL_OFFSET, 0.5),
             ));
         });
 }

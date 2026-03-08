@@ -141,9 +141,9 @@ fn create_tile_mesh() -> Mesh {
     mesh
 }
 
-// ---------------------------------------------------------------------------
-// Startup system
-// ---------------------------------------------------------------------------
+/// Scale factor applied to every tile mesh so a small gap is visible between
+/// adjacent tiles, giving the isometric grid its characteristic look.
+const TILE_SCALE: f32 = 0.93;
 
 fn setup_world(
     mut commands: Commands,
@@ -161,7 +161,7 @@ fn setup_world(
             MeshMaterial2d(materials.add(tile_type.color())),
             // Scale down slightly so there is a visible gap between tiles,
             // giving the isometric grid its characteristic look.
-            Transform::from_xyz(pos.x, pos.y, z).with_scale(Vec3::new(0.93, 0.93, 1.0)),
+            Transform::from_xyz(pos.x, pos.y, z).with_scale(Vec3::new(TILE_SCALE, TILE_SCALE, 1.0)),
         ));
     }
 }

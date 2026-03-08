@@ -4,6 +4,10 @@ use crate::player::Player;
 
 pub struct CameraPlugin;
 
+/// Fraction of the distance to the player that the camera closes each frame.
+/// Lower values give a smoother (but lazier) follow; 1.0 snaps immediately.
+const CAMERA_FOLLOW_SPEED: f32 = 0.08;
+
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_camera)
@@ -29,7 +33,7 @@ fn camera_follow_player(
 
     let target = player_transform.translation.truncate();
     let current = camera_transform.translation.truncate();
-    let new_pos = current.lerp(target, 0.08);
+    let new_pos = current.lerp(target, CAMERA_FOLLOW_SPEED);
 
     camera_transform.translation.x = new_pos.x;
     camera_transform.translation.y = new_pos.y;

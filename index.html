@@ -17,7 +17,6 @@
         background: #6ba3d6;
         overflow: hidden;
       }
-      /* Bevy creates its own <canvas>; make it fill the viewport */
       canvas {
         display: block;
         width: 100% !important;
@@ -26,6 +25,7 @@
     </style>
   </head>
   <body>
+    <canvas id="bevy"></canvas>
     <script type="module">
       import init from "./kasy.js";
       await init();

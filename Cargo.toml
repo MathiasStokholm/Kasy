@@ -39,6 +39,13 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+# WASM release profile – inherits all release settings but uses thin LTO so
+# that incremental builds only re-optimise changed crates rather than running
+# a full fat-LTO pass over the entire Bevy dependency tree (~2 min saving).
+[profile.wasm-release]
+inherits = "release"
+lto = "thin"
+
 # Speed up debug builds by optimising dependencies but not our own code
 [profile.dev]
 opt-level = 1

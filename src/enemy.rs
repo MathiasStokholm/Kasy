@@ -136,3 +136,42 @@ const LCG_INC: u32 = 1_013_904_223;
 fn lcg(seed: u32) -> u32 {
     seed.wrapping_mul(LCG_MUL).wrapping_add(LCG_INC)
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lcg_zero_seed_returns_increment() {
+        // lcg(0) = 0 * LCG_MUL + LCG_INC = LCG_INC
+        assert_eq!(lcg(0), LCG_INC);
+    }
+
+    #[test]
+    fn lcg_unit_seed_returns_mul_plus_inc() {
+        assert_eq!(lcg(1), LCG_MUL.wrapping_add(LCG_INC));
+    }
+
+    #[test]
+    fn lcg_is_deterministic() {
+        assert_eq!(lcg(42), lcg(42));
+    }
+
+    #[test]
+    fn lcg_produces_varied_output() {
+        // Consecutive outputs must differ (otherwise the PRNG is degenerate).
+        let v1 = lcg(1234);
+        let v2 = lcg(v1);
+        assert_ne!(v1, v2);
+    }
+
+    #[test]
+    fn lcg_wraps_without_panic() {
+        // Should not panic on overflow due to wrapping arithmetic.
+        let _ = lcg(u32::MAX);
+    }
+}

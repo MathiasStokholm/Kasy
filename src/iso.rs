@@ -39,3 +39,62 @@ pub fn world_to_grid(world: Vec2) -> (i32, i32) {
     let gy = ((v - u) * 0.5).round() as i32;
     (gx, gy)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grid_to_world_origin() {
+        assert_eq!(grid_to_world(0, 0), Vec2::ZERO);
+    }
+
+    #[test]
+    fn grid_to_world_unit_gx() {
+        // gx=1, gy=0 → screen_x = TILE_WIDTH/2, screen_y = -TILE_HEIGHT/2
+        assert_eq!(grid_to_world(1, 0), Vec2::new(TILE_WIDTH * 0.5, -TILE_HEIGHT * 0.5));
+    }
+
+    #[test]
+    fn grid_to_world_unit_gy() {
+        // gx=0, gy=1 → screen_x = -TILE_WIDTH/2, screen_y = -TILE_HEIGHT/2
+        assert_eq!(grid_to_world(0, 1), Vec2::new(-TILE_WIDTH * 0.5, -TILE_HEIGHT * 0.5));
+    }
+
+    #[test]
+    fn grid_to_world_negative_coords() {
+        assert_eq!(grid_to_world(-1, -1), Vec2::new(0.0, TILE_HEIGHT));
+    }
+
+    #[test]
+    fn world_to_grid_roundtrip() {
+        for gx in -5..=5_i32 {
+            for gy in -5..=5_i32 {
+                let world = grid_to_world(gx, gy);
+                assert_eq!(
+                    world_to_grid(world),
+                    (gx, gy),
+                    "roundtrip failed for gx={gx}, gy={gy}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn grid_to_depth_origin() {
+        assert_eq!(grid_to_depth(0, 0), 0.0);
+    }
+
+    #[test]
+    fn grid_to_depth_value() {
+        // depth = (gx + gy) * 0.01
+        assert!((grid_to_depth(3, 2) - 0.05).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn grid_to_depth_ordering() {
+        // Tiles closer to the camera (larger gx+gy) must have greater depth.
+        assert!(grid_to_depth(2, 2) > grid_to_depth(0, 0));
+        assert!(grid_to_depth(0, 0) > grid_to_depth(-1, -1));
+    }
+}

@@ -729,3 +729,52 @@ fn setup_world(
         spawn_decorations(&mut commands, &mut meshes, &mut materials, gx, gy, tile_type, base);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tiles_with(coords: &[(i32, i32)]) -> WorldTiles {
+        WorldTiles(coords.iter().copied().collect())
+    }
+
+    #[test]
+    fn empty_tiles_returns_false_everywhere() {
+        let tiles = WorldTiles::default();
+        assert!(!tiles.is_over_tile(Vec2::ZERO));
+        assert!(!tiles.is_over_tile(Vec2::new(1000.0, 1000.0)));
+    }
+
+    #[test]
+    fn is_over_tile_at_grid_origin() {
+        let tiles = tiles_with(&[(0, 0)]);
+        // The world-space position of grid (0, 0) is Vec2::ZERO.
+        assert!(tiles.is_over_tile(Vec2::ZERO));
+    }
+
+    #[test]
+    fn is_over_tile_at_explicit_grid_position() {
+        let tiles = tiles_with(&[(5, 3)]);
+        let world_pos = grid_to_world(5, 3);
+        assert!(tiles.is_over_tile(world_pos));
+    }
+
+    #[test]
+    fn is_over_tile_neighbour_counts_as_over() {
+        // is_over_tile checks 8 neighbours, so the world position of a tile
+        // adjacent to an occupied grid cell still returns true.
+        let tiles = tiles_with(&[(0, 0)]);
+        let neighbour_pos = grid_to_world(1, 0);
+        assert!(tiles.is_over_tile(neighbour_pos));
+    }
+
+    #[test]
+    fn is_over_tile_far_from_all_tiles_returns_false() {
+        let tiles = tiles_with(&[(0, 0)]);
+        assert!(!tiles.is_over_tile(Vec2::new(10_000.0, 10_000.0)));
+    }
+}

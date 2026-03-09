@@ -20,8 +20,8 @@ bevy = { version = "0.15", default-features = false, features = [
     "default_font",
     # Linux windowing (X11); also works on CI runners
     "x11",
-    # WebGL2 renderer – required when targeting WebAssembly
-    "webgl2",
+    # WebGPU renderer – enables the modern WebGPU backend (required for WASM deployments)
+    "webgpu",
 ] }
 
 # Ensure the correct getrandom backends are used when targeting WebAssembly.

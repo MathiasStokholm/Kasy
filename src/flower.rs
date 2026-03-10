@@ -237,12 +237,11 @@ fn spawn_win_overlay(commands: &mut Commands) {
 
 /// If the bee touches any non-red flower, trigger a respawn.
 fn check_flower_collision(
-    respawn:      Res<RespawnState>,
-    player_query: Query<&Transform, With<Player>>,
-    flower_query: Query<&Transform, With<Flower>>,
     mut respawn_state: ResMut<RespawnState>,
+    player_query:      Query<&Transform, With<Player>>,
+    flower_query:      Query<&Transform, With<Flower>>,
 ) {
-    if respawn.mode != RespawnMode::Normal {
+    if respawn_state.mode != RespawnMode::Normal {
         return;
     }
     let Ok(player_tf) = player_query.get_single() else { return; };

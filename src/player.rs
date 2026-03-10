@@ -295,12 +295,11 @@ fn player_movement(
 
 /// Trigger a respawn if the bee flies over lava while moving too slowly.
 fn check_lava(
-    lava_tiles:   Option<Res<LavaTiles>>,
-    respawn:      Res<RespawnState>,
-    player_query: Query<(&Transform, &BeeVelocity), With<Player>>,
+    lava_tiles:        Option<Res<LavaTiles>>,
     mut respawn_state: ResMut<RespawnState>,
+    player_query:      Query<(&Transform, &BeeVelocity), With<Player>>,
 ) {
-    if respawn.mode != RespawnMode::Normal {
+    if respawn_state.mode != RespawnMode::Normal {
         return;
     }
     let Some(lava) = lava_tiles else { return; };

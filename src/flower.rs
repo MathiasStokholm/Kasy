@@ -260,9 +260,9 @@ fn check_flower_collision(
 /// If the bee touches the red flower, show the win overlay and reset the bee.
 fn check_win_collision(
     keyboard:         Res<ButtonInput<KeyCode>>,
-    red_flower_query: Query<&Transform, With<RedFlower>>,
+    red_flower_query: Query<&Transform, (With<RedFlower>, Without<Player>)>,
     mut win_overlay:  Query<(&mut Visibility, &mut BackgroundColor), With<WinOverlay>>,
-    mut player_query: Query<(&mut Transform, &mut BeeVelocity), With<Player>>,
+    mut player_query: Query<(&mut Transform, &mut BeeVelocity), (With<Player>, Without<RedFlower>)>,
     respawn:          Res<RespawnState>,
 ) {
     let Ok((mut overlay_vis, mut overlay_bg)) = win_overlay.get_single_mut() else {

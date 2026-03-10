@@ -1,21 +1,20 @@
-use bevy::{prelude::*, window::PrimaryWindow};
+use bevy::prelude::*;
 
-use crate::projectile::SpawnProjectile;
-use crate::world::WorldTiles;
+use crate::world::LavaTiles;
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<FallState>()
+        app.init_resource::<RespawnState>()
             .add_systems(Startup, setup_player)
             .add_systems(
                 Update,
                 (
-                    handle_player_fall,
-                    player_movement.after(handle_player_fall),
-                    player_aim.after(handle_player_fall),
-                    player_shoot.after(handle_player_fall),
+                    handle_respawn,
+                    player_movement.after(handle_respawn),
+                    check_lava.after(player_movement),
+                    update_speed_hud.after(player_movement),
                 ),
             );
     }
@@ -29,40 +28,55 @@ impl Plugin for PlayerPlugin {
 #[derive(Component)]
 pub struct Player;
 
+/// Current velocity of the bee in world-space units per second.
+#[derive(Component)]
+pub struct BeeVelocity(pub Vec2);
+
 /// Marker for the full-screen black overlay used for the fade-to-black effect.
 #[derive(Component)]
 struct FadeOverlay;
 
-/// Which phase of the fall-and-respawn sequence we are in.
+/// Marker for the speed readout text in the HUD.
+#[derive(Component)]
+struct SpeedHud;
+
+/// Which phase of the respawn sequence we are in.
 #[derive(Default, PartialEq)]
-enum FallMode {
-    /// Normal gameplay – player is on the islands.
+pub enum RespawnMode {
+    /// Normal gameplay.
     #[default]
     Normal,
-    /// Player has walked off an island; fading the screen to black.
+    /// Fading the screen to black before teleporting.
     FadingOut,
     /// Screen is fully black; fading back in at the spawn point.
     FadingIn,
 }
 
-/// Tracks fall / respawn state.  Stored as a resource so all systems share it.
+/// Tracks respawn state.  Stored as a resource so all systems share it.
 #[derive(Resource, Default)]
-pub struct FallState {
-    mode:  FallMode,
+pub struct RespawnState {
+    pub mode:  RespawnMode,
     /// Current overlay alpha (0 = transparent, 1 = fully black).
-    alpha: f32,
+    pub alpha: f32,
 }
 
-/// Movement speed in world-space units per second.
-const PLAYER_SPEED: f32 = 200.0;
-/// Radius of the player circle sprite in pixels.
-const PLAYER_RADIUS: f32 = 14.0;
-/// Gap between the player body edge and the start of the gun barrel.
-const BARREL_OFFSET: f32 = 11.0;
+/// Radius of the bee body sprite in pixels (used for collision checks).
+pub const PLAYER_RADIUS: f32 = 10.0;
+
+/// How fast the bee can turn (radians per second).
+const TURN_SPEED: f32 = 3.0;
+/// Thrust acceleration when Space is held (world units per second²).
+const THRUST_ACCEL: f32 = 320.0;
+/// Maximum flight speed (world units per second).
+const MAX_SPEED: f32 = 380.0;
+/// Linear drag coefficient — velocity decays as `vel *= (1 − DRAG·dt).max(0)`.
+const LINEAR_DRAG: f32 = 1.5;
+/// Minimum speed required to safely cross lava tiles.
+const LAVA_MIN_SPEED: f32 = 120.0;
 /// Speed of the fade-to-black transition (alpha units per second).
 const FADE_SPEED: f32 = 2.5;
-/// World-space spawn position (matches the initial `Transform` in `setup_player`).
-const PLAYER_SPAWN: Vec2 = Vec2::new(0.0, 8.0);
+/// World-space spawn position.
+pub const PLAYER_SPAWN: Vec2 = Vec2::new(0.0, 8.0);
 
 // ---------------------------------------------------------------------------
 // Startup system
@@ -73,36 +87,66 @@ fn setup_player(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let player_mesh = meshes.add(Circle::new(PLAYER_RADIUS));
-    let player_material = materials.add(Color::srgb(0.85, 0.25, 0.25));
+    // --- Bee body: yellow ellipse ---
+    let body_mesh     = meshes.add(Ellipse::new(PLAYER_RADIUS, PLAYER_RADIUS * 1.5));
+    let body_material = materials.add(Color::srgb(1.0, 0.85, 0.05));
 
-    // The gun barrel is a thin rectangle that sticks out in the player's
-    // local +Y direction.  Because the player entity rotates to face the
-    // mouse, the barrel always points toward the cursor.
-    let barrel_mesh = meshes.add(Rectangle::new(5.0, 22.0));
-    let barrel_material = materials.add(Color::srgb(0.20, 0.50, 0.95));
+    // --- Bee stripes: dark thin rectangles ---
+    let stripe_mesh     = meshes.add(Rectangle::new(PLAYER_RADIUS * 2.2, 4.0));
+    let stripe_material = materials.add(Color::srgb(0.08, 0.08, 0.08));
+
+    // --- Bee stinger: small dark triangle approximated by a thin rectangle ---
+    let stinger_mesh     = meshes.add(Rectangle::new(3.0, 5.0));
+    let stinger_material = materials.add(Color::srgb(0.12, 0.08, 0.04));
+
+    // --- Wings: translucent pale-blue circles on each side ---
+    let wing_mesh     = meshes.add(Circle::new(PLAYER_RADIUS * 1.3));
+    let wing_material = materials.add(Color::srgba(0.80, 0.92, 1.00, 0.55));
 
     commands
         .spawn((
             Player,
-            Mesh2d(player_mesh),
-            MeshMaterial2d(player_material),
-            // Start above the centre tile; z=10 ensures the player is always
-            // rendered on top of all tile geometry.
+            BeeVelocity(Vec2::ZERO),
+            Mesh2d(body_mesh),
+            MeshMaterial2d(body_material),
+            // z = 10 keeps the bee above all tile geometry.
             Transform::from_xyz(PLAYER_SPAWN.x, PLAYER_SPAWN.y, 10.0),
         ))
         .with_children(|parent| {
+            // Two body stripes
             parent.spawn((
-                Mesh2d(barrel_mesh),
-                MeshMaterial2d(barrel_material),
-                // Offset the barrel forward (local +Y) by the player radius
-                // plus a small gap so it appears to protrude from the body.
-                Transform::from_xyz(0.0, PLAYER_RADIUS + BARREL_OFFSET, 0.5),
+                Mesh2d(stripe_mesh.clone()),
+                MeshMaterial2d(stripe_material.clone()),
+                Transform::from_xyz(0.0, 5.0, 0.1),
+            ));
+            parent.spawn((
+                Mesh2d(stripe_mesh),
+                MeshMaterial2d(stripe_material),
+                Transform::from_xyz(0.0, -3.0, 0.1),
+            ));
+
+            // Stinger at the rear (local −Y = back)
+            parent.spawn((
+                Mesh2d(stinger_mesh),
+                MeshMaterial2d(stinger_material),
+                Transform::from_xyz(0.0, -(PLAYER_RADIUS * 1.5 + 2.0), 0.1),
+            ));
+
+            // Left wing
+            parent.spawn((
+                Mesh2d(wing_mesh.clone()),
+                MeshMaterial2d(wing_material.clone()),
+                Transform::from_xyz(-(PLAYER_RADIUS + 4.0), 4.0, 0.2),
+            ));
+            // Right wing
+            parent.spawn((
+                Mesh2d(wing_mesh),
+                MeshMaterial2d(wing_material),
+                Transform::from_xyz(PLAYER_RADIUS + 4.0, 4.0, 0.2),
             ));
         });
 
-    // Full-screen black overlay for fade-to-black.  Starts transparent and is
-    // brought to alpha=1 when the player falls off an island.
+    // Full-screen black overlay for fade-to-black respawn animation.
     commands.spawn((
         FadeOverlay,
         Node {
@@ -114,22 +158,57 @@ fn setup_player(
             ..default()
         },
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
-        // Render on top of all 2-D game geometry.
+        // Render on top of everything.
         GlobalZIndex(1000),
     ));
+
+    // HUD: controls hint + speed readout in the top-left corner
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(12.0),
+            top:  Val::Px(12.0),
+            flex_direction: FlexDirection::Column,
+            row_gap: Val::Px(4.0),
+            ..default()
+        },
+        GlobalZIndex(500),
+    ))
+    .with_children(|parent| {
+        let hint_color = Color::srgba(1.0, 1.0, 1.0, 0.85);
+        for line in [
+            "🐝  SPACE  – thrust",
+            "◀ ▶  Steer",
+            "Find the RED flower!",
+            "Avoid all other flowers",
+            "Fly fast over LAVA",
+        ] {
+            parent.spawn((
+                Text::new(line),
+                TextFont { font_size: 16.0, ..default() },
+                TextColor(hint_color),
+            ));
+        }
+
+        // Speed indicator (updated each frame by update_speed_hud)
+        parent.spawn((
+            SpeedHud,
+            Text::new("Speed: 0"),
+            TextFont { font_size: 16.0, ..default() },
+            TextColor(Color::srgb(1.0, 1.0, 0.4)),
+        ));
+    });
 }
 
 // ---------------------------------------------------------------------------
 // Update systems
 // ---------------------------------------------------------------------------
 
-/// Detect when the player has walked off the islands and drive the
-/// fade-out → teleport → fade-in cycle.
-fn handle_player_fall(
+/// Drive the fade-out → teleport → fade-in respawn cycle.
+fn handle_respawn(
     time: Res<Time>,
-    world_tiles: Option<Res<WorldTiles>>,
-    mut fall_state: ResMut<FallState>,
-    mut player_query: Query<&mut Transform, With<Player>>,
+    mut respawn: ResMut<RespawnState>,
+    mut player_query: Query<(&mut Transform, &mut BeeVelocity), With<Player>>,
     mut overlay_query: Query<&mut BackgroundColor, With<FadeOverlay>>,
 ) {
     let dt = time.delta_secs();
@@ -137,171 +216,110 @@ fn handle_player_fall(
         return;
     };
 
-    match fall_state.mode {
-        FallMode::Normal => {
-            // Only start falling when the WorldTiles resource is available
-            // (it is inserted in the same Startup frame, so this is always true
-            // during Update, but the `Option` guards against edge cases).
-            if let Some(tiles) = world_tiles {
-                if let Ok(transform) = player_query.get_single() {
-                    let pos = transform.translation.truncate();
-                    if !tiles.is_over_tile(pos) {
-                        fall_state.mode  = FallMode::FadingOut;
-                        fall_state.alpha = 0.0;
-                    }
-                }
-            }
-        }
+    match respawn.mode {
+        RespawnMode::Normal => {}
 
-        FallMode::FadingOut => {
-            fall_state.alpha = (fall_state.alpha + dt * FADE_SPEED).min(1.0);
-            overlay.0 = Color::srgba(0.0, 0.0, 0.0, fall_state.alpha);
+        RespawnMode::FadingOut => {
+            respawn.alpha = (respawn.alpha + dt * FADE_SPEED).min(1.0);
+            overlay.0 = Color::srgba(0.0, 0.0, 0.0, respawn.alpha);
 
-            if fall_state.alpha >= 1.0 {
-                // Screen is fully black – teleport back to spawn.
-                if let Ok(mut transform) = player_query.get_single_mut() {
+            if respawn.alpha >= 1.0 {
+                // Teleport back to spawn and zero out velocity.
+                if let Ok((mut transform, mut vel)) = player_query.get_single_mut() {
                     transform.translation.x = PLAYER_SPAWN.x;
                     transform.translation.y = PLAYER_SPAWN.y;
-                    // Reset rotation so the barrel points up.
                     transform.rotation = Quat::IDENTITY;
+                    vel.0 = Vec2::ZERO;
                 }
-                fall_state.mode = FallMode::FadingIn;
+                respawn.mode = RespawnMode::FadingIn;
             }
         }
 
-        FallMode::FadingIn => {
-            fall_state.alpha = (fall_state.alpha - dt * FADE_SPEED).max(0.0);
-            overlay.0 = Color::srgba(0.0, 0.0, 0.0, fall_state.alpha);
+        RespawnMode::FadingIn => {
+            respawn.alpha = (respawn.alpha - dt * FADE_SPEED).max(0.0);
+            overlay.0 = Color::srgba(0.0, 0.0, 0.0, respawn.alpha);
 
-            if fall_state.alpha <= 0.0 {
+            if respawn.alpha <= 0.0 {
                 overlay.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
-                fall_state.mode = FallMode::Normal;
+                respawn.mode = RespawnMode::Normal;
             }
         }
     }
 }
 
-/// Move the player in screen-space directions based on WASD keys.
+/// Steer and thrust the bee.
 ///
-/// Movement is independent of the player's facing direction (strafing style):
-/// W/S move along the screen Y axis and A/D along the screen X axis.
-/// Blocked during fall/respawn.
+/// * **Left/Right arrow** – rotate the bee.
+/// * **Space** – thrust in the facing direction; velocity decays with drag.
 fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
-    fall_state: Res<FallState>,
-    mut query: Query<&mut Transform, With<Player>>,
+    respawn: Res<RespawnState>,
+    mut query: Query<(&mut Transform, &mut BeeVelocity), With<Player>>,
 ) {
-    if fall_state.mode != FallMode::Normal {
+    if respawn.mode != RespawnMode::Normal {
         return;
     }
 
-    let Ok(mut transform) = query.get_single_mut() else {
+    let Ok((mut transform, mut vel)) = query.get_single_mut() else {
         return;
     };
 
-    let mut direction = Vec2::ZERO;
+    let dt = time.delta_secs();
 
-    if keyboard.pressed(KeyCode::KeyW) {
-        direction.y += 1.0;
+    // Steering
+    if keyboard.pressed(KeyCode::ArrowLeft) {
+        transform.rotation *= Quat::from_rotation_z(TURN_SPEED * dt);
     }
-    if keyboard.pressed(KeyCode::KeyS) {
-        direction.y -= 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyA) {
-        direction.x -= 1.0;
-    }
-    if keyboard.pressed(KeyCode::KeyD) {
-        direction.x += 1.0;
+    if keyboard.pressed(KeyCode::ArrowRight) {
+        transform.rotation *= Quat::from_rotation_z(-TURN_SPEED * dt);
     }
 
-    if direction.length_squared() > 0.0 {
-        direction = direction.normalize();
-        transform.translation.x += direction.x * PLAYER_SPEED * time.delta_secs();
-        transform.translation.y += direction.y * PLAYER_SPEED * time.delta_secs();
+    // Thrust: accelerate along the bee's local +Y axis.
+    if keyboard.pressed(KeyCode::Space) {
+        let forward = (transform.rotation * Vec3::Y).truncate();
+        vel.0 += forward * THRUST_ACCEL * dt;
+        let speed = vel.0.length();
+        if speed > MAX_SPEED {
+            vel.0 = vel.0 / speed * MAX_SPEED;
+        }
+    }
+
+    // Linear drag – bee gradually slows when not thrusting.
+    vel.0 *= (1.0 - LINEAR_DRAG * dt).max(0.0);
+
+    // Integrate position.
+    transform.translation.x += vel.0.x * dt;
+    transform.translation.y += vel.0.y * dt;
+}
+
+/// Trigger a respawn if the bee flies over lava while moving too slowly.
+fn check_lava(
+    lava_tiles:   Option<Res<LavaTiles>>,
+    respawn:      Res<RespawnState>,
+    player_query: Query<(&Transform, &BeeVelocity), With<Player>>,
+    mut respawn_state: ResMut<RespawnState>,
+) {
+    if respawn.mode != RespawnMode::Normal {
+        return;
+    }
+    let Some(lava) = lava_tiles else { return; };
+    let Ok((transform, vel)) = player_query.get_single() else { return; };
+
+    let pos = transform.translation.truncate();
+    if lava.is_over_lava(pos) && vel.0.length() < LAVA_MIN_SPEED {
+        respawn_state.mode  = RespawnMode::FadingOut;
+        respawn_state.alpha = 0.0;
     }
 }
 
-/// Rotate the player to face the current mouse-cursor position.
-/// Skipped during fall/respawn.
-fn player_aim(
-    windows: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform)>,
-    mut player_query: Query<&mut Transform, With<Player>>,
-    fall_state: Res<FallState>,
+/// Update the speed readout in the HUD every frame.
+fn update_speed_hud(
+    player_query: Query<&BeeVelocity, With<Player>>,
+    mut hud_query: Query<&mut Text, With<SpeedHud>>,
 ) {
-    if fall_state.mode != FallMode::Normal {
-        return;
-    }
-
-    let Ok(window) = windows.get_single() else {
-        return;
-    };
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
-        return;
-    };
-    let Ok(mut player_transform) = player_query.get_single_mut() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
-        return;
-    };
-
-    let to_cursor = world_pos - player_transform.translation.truncate();
-    if to_cursor.length_squared() > 1.0 {
-        // atan2 gives angle from +X axis; subtract π/2 to align our sprite's
-        // local +Y axis (the barrel) with the direction to the cursor.
-        let angle = to_cursor.y.atan2(to_cursor.x) - std::f32::consts::FRAC_PI_2;
-        player_transform.rotation = Quat::from_rotation_z(angle);
-    }
-}
-
-/// Fire a water-gun projectile toward the cursor on left-click.
-/// Blocked during fall/respawn.
-fn player_shoot(
-    mouse_buttons: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window, With<PrimaryWindow>>,
-    camera_query: Query<(&Camera, &GlobalTransform)>,
-    player_query: Query<&Transform, With<Player>>,
-    mut spawn_events: EventWriter<SpawnProjectile>,
-    fall_state: Res<FallState>,
-) {
-    if fall_state.mode != FallMode::Normal {
-        return;
-    }
-
-    if !mouse_buttons.just_pressed(MouseButton::Left) {
-        return;
-    }
-
-    let Ok(window) = windows.get_single() else {
-        return;
-    };
-    let Ok((camera, camera_transform)) = camera_query.get_single() else {
-        return;
-    };
-    let Ok(player_transform) = player_query.get_single() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-    let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) else {
-        return;
-    };
-
-    let player_pos = player_transform.translation.truncate();
-    let direction = (world_pos - player_pos).normalize_or_zero();
-
-    if direction != Vec2::ZERO {
-        spawn_events.send(SpawnProjectile {
-            position: player_pos,
-            direction,
-        });
-    }
+    let Ok(vel) = player_query.get_single() else { return; };
+    let Ok(mut text) = hud_query.get_single_mut() else { return; };
+    let speed = vel.0.length() as u32;
+    *text = Text::new(format!("Speed: {speed}  (lava min: {LAVA_MIN_SPEED})"));
 }

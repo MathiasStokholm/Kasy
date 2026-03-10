@@ -21,20 +21,17 @@ impl Plugin for WorldPlugin {
 }
 
 // ---------------------------------------------------------------------------
-// WorldTiles resource
+// LavaTiles resource
 // ---------------------------------------------------------------------------
 
-/// Set of every grid position that has a tile.  Used to test whether a
-/// world-space position is over the islands (fall detection, enemy wandering).
+/// Set of every grid position that is a lava or volcanic tile.
+/// The bee must cross these at high speed or it will be sent back to spawn.
 #[derive(Resource, Default)]
-pub struct WorldTiles(pub HashSet<(i32, i32)>);
+pub struct LavaTiles(pub HashSet<(i32, i32)>);
 
-impl WorldTiles {
-    /// Returns `true` when `world_pos` is above at least one tile.
-    ///
-    /// Tests the nearest grid position and its 8 neighbours so that the player
-    /// is not penalised for standing exactly on a tile edge.
-    pub fn is_over_tile(&self, world_pos: Vec2) -> bool {
+impl LavaTiles {
+    /// Returns `true` when `world_pos` is above at least one lava/volcanic tile.
+    pub fn is_over_lava(&self, world_pos: Vec2) -> bool {
         let (gx, gy) = world_to_grid(world_pos);
         for dx in -1..=1_i32 {
             for dy in -1..=1_i32 {
@@ -676,9 +673,13 @@ fn setup_world(
     // Generate tile data once so we can both spawn geometry and build WorldTiles.
     let tiles = generate_world();
 
-    // Populate the WorldTiles resource so other systems can look up valid positions.
-    let tile_set: HashSet<(i32, i32)> = tiles.iter().map(|(gx, gy, _)| (*gx, *gy)).collect();
-    commands.insert_resource(WorldTiles(tile_set));
+    // Populate the LavaTiles resource for the bee's speed-check mechanic.
+    let lava_set: HashSet<(i32, i32)> = tiles
+        .iter()
+        .filter(|(_, _, t)| matches!(t, TileType::Lava | TileType::Volcanic))
+        .map(|(gx, gy, _)| (*gx, *gy))
+        .collect();
+    commands.insert_resource(LavaTiles(lava_set));
 
     // Build one pixel-art texture per tile type (shared across all tiles of that type)
     const ALL_TYPES: [TileType; 12] = [

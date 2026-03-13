@@ -30,6 +30,7 @@ const FLOWER_LIGHT_INTENSITY: f32 = 1_400_000.0;
 const FLOWER_LIGHT_RANGE: f32 = 95.0;
 const RED_FLOWER_LIGHT_INTENSITY: f32 = 2_400_000.0;
 const RED_FLOWER_LIGHT_RANGE: f32 = 120.0;
+const WIN_RESET_HEIGHT_OFFSET: f32 = 2.0;
 const COLLISION_DIST_NORMAL: f32 = PLAYER_RADIUS + FLOWER_RADIUS + 2.0;
 const COLLISION_DIST_RED: f32 = PLAYER_RADIUS + RED_FLOWER_RADIUS + 2.0;
 
@@ -362,7 +363,8 @@ fn check_win_collision(
             *overlay_vis = Visibility::Hidden;
             overlay_bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
             if let Ok((mut tf, mut vel)) = player_query.get_single_mut() {
-                tf.translation = Vec3::new(PLAYER_SPAWN.x, FLOWER_HEIGHT + 2.0, PLAYER_SPAWN.y);
+                tf.translation =
+                    Vec3::new(PLAYER_SPAWN.x, FLOWER_HEIGHT + WIN_RESET_HEIGHT_OFFSET, PLAYER_SPAWN.y);
                 tf.rotation = Quat::IDENTITY;
                 vel.0 = Vec2::ZERO;
             }

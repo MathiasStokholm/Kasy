@@ -22,14 +22,23 @@ const RED_FLOWER_RADIUS: f32 = 9.0;
 const FLOWER_HEIGHT: f32 = 10.0;
 const STEM_HEIGHT: f32 = 9.0;
 const STEM_MESH_HEIGHT: f32 = 8.0;
-const FLOWER_LIGHT_HEIGHT_OFFSET: f32 = -4.0;
-const FLOWER_GROUND_FILL_HEIGHT_OFFSET: f32 = -7.5;
-const FLOWER_GROUND_FILL_INTENSITY_SCALE: f32 = 0.65;
-const FLOWER_GROUND_FILL_RANGE_BONUS: f32 = 22.0;
-const FLOWER_LIGHT_INTENSITY: f32 = 1_400_000.0;
-const FLOWER_LIGHT_RANGE: f32 = 95.0;
-const RED_FLOWER_LIGHT_INTENSITY: f32 = 2_400_000.0;
-const RED_FLOWER_LIGHT_RANGE: f32 = 120.0;
+const FLOWER_LIGHT_HEIGHT_OFFSET: f32 = 1.5;
+const FLOWER_GROUND_FILL_HEIGHT_OFFSET: f32 = 0.25;
+const FLOWER_DOWNLIGHT_HEIGHT_OFFSET: f32 = 10.0;
+const FLOWER_DOWNLIGHT_TARGET_HEIGHT_OFFSET: f32 = -1.0;
+const FLOWER_DOWNLIGHT_INTENSITY_SCALE: f32 = 0.55;
+const FLOWER_DOWNLIGHT_RANGE: f32 = 42.0;
+const FLOWER_DOWNLIGHT_INNER_ANGLE: f32 = 0.55;
+const FLOWER_DOWNLIGHT_OUTER_ANGLE: f32 = 1.05;
+const FLOWER_GROUND_GLOW_HEIGHT_OFFSET: f32 = -0.94;
+const FLOWER_GROUND_GLOW_RADIUS: f32 = 18.0;
+const RED_FLOWER_GROUND_GLOW_RADIUS: f32 = 24.0;
+const FLOWER_GROUND_FILL_INTENSITY_SCALE: f32 = 1.1;
+const FLOWER_GROUND_FILL_RANGE_BONUS: f32 = 36.0;
+const FLOWER_LIGHT_INTENSITY: f32 = 3_500_000.0;
+const FLOWER_LIGHT_RANGE: f32 = 125.0;
+const RED_FLOWER_LIGHT_INTENSITY: f32 = 5_500_000.0;
+const RED_FLOWER_LIGHT_RANGE: f32 = 155.0;
 const WIN_RESET_HEIGHT_OFFSET: f32 = 2.0;
 const COLLISION_DIST_NORMAL: f32 = PLAYER_RADIUS + FLOWER_RADIUS + 2.0;
 const COLLISION_DIST_RED: f32 = PLAYER_RADIUS + RED_FLOWER_RADIUS + 2.0;
@@ -93,13 +102,16 @@ fn spawn_flower_cluster(
     blossom_mesh: &Handle<Mesh>,
     center_mesh: &Handle<Mesh>,
     stem_mesh: &Handle<Mesh>,
+    ground_glow_mesh: &Handle<Mesh>,
     petal_material: Handle<StandardMaterial>,
     center_material: Handle<StandardMaterial>,
     stem_material: Handle<StandardMaterial>,
+    ground_glow_material: Handle<StandardMaterial>,
     light_color: Color,
     intensity: f32,
     range: f32,
     scale: f32,
+    ground_glow_radius: f32,
 ) {
     parent.spawn((
         Mesh3d(stem_mesh.clone()),
@@ -128,6 +140,13 @@ fn spawn_flower_cluster(
     ));
 
     parent.spawn((
+        Mesh3d(ground_glow_mesh.clone()),
+        MeshMaterial3d(ground_glow_material),
+        Transform::from_xyz(0.0, FLOWER_GROUND_GLOW_HEIGHT_OFFSET, 0.0)
+            .with_scale(Vec3::new(ground_glow_radius, 1.0, ground_glow_radius)),
+    ));
+
+    parent.spawn((
         PointLight {
             color: light_color,
             intensity,
@@ -147,6 +166,22 @@ fn spawn_flower_cluster(
             ..default()
         },
         Transform::from_xyz(0.0, FLOWER_GROUND_FILL_HEIGHT_OFFSET, 0.0),
+    ));
+
+    parent.spawn((
+        SpotLight {
+            color: light_color,
+            intensity: intensity * FLOWER_DOWNLIGHT_INTENSITY_SCALE,
+            range: FLOWER_DOWNLIGHT_RANGE,
+            inner_angle: FLOWER_DOWNLIGHT_INNER_ANGLE,
+            outer_angle: FLOWER_DOWNLIGHT_OUTER_ANGLE,
+            shadows_enabled: false,
+            ..default()
+        },
+        Transform::from_xyz(0.0, FLOWER_DOWNLIGHT_HEIGHT_OFFSET, 0.0).looking_at(
+            Vec3::new(0.0, FLOWER_DOWNLIGHT_TARGET_HEIGHT_OFFSET, 0.0),
+            Vec3::Z,
+        ),
     ));
 }
 
@@ -172,6 +207,7 @@ fn spawn_flowers(
             .expect("flower center ico sphere should build"),
     );
     let stem_mesh = meshes.add(Cuboid::new(1.6, STEM_MESH_HEIGHT, 1.6));
+    let ground_glow_mesh = meshes.add(Cylinder::new(1.0, 0.05));
 
     let pink_mat = emissive_material(
         &mut materials,
@@ -198,6 +234,14 @@ fn spawn_flowers(
         perceptual_roughness: 0.95,
         ..default()
     });
+    let warm_ground_glow_mat = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.90, 0.62, 0.14),
+        emissive: LinearRgba::rgb(0.35, 0.30, 0.18),
+        alpha_mode: AlphaMode::Add,
+        unlit: true,
+        cull_mode: None,
+        ..default()
+    });
 
     let red_mat = emissive_material(
         &mut materials,
@@ -209,6 +253,14 @@ fn spawn_flowers(
         Color::srgb(1.0, 0.88, 0.18),
         LinearRgba::rgb(10.0, 7.0, 1.5),
     );
+    let red_ground_glow_mat = materials.add(StandardMaterial {
+        base_color: Color::srgba(1.0, 0.40, 0.24, 0.16),
+        emissive: LinearRgba::rgb(0.40, 0.12, 0.08),
+        alpha_mode: AlphaMode::Add,
+        unlit: true,
+        cull_mode: None,
+        ..default()
+    });
 
     for &(gx, gy) in NON_RED_POSITIONS {
         let world_pos = grid_to_world(gx, gy);
@@ -236,13 +288,16 @@ fn spawn_flowers(
                     &blossom_mesh,
                     &center_mesh,
                     &stem_mesh,
+                    &ground_glow_mesh,
                     petal_mat,
                     center_mat.clone(),
                     stem_mat.clone(),
+                    warm_ground_glow_mat.clone(),
                     Color::srgb(1.0, 0.85, 0.65),
                     FLOWER_LIGHT_INTENSITY,
                     FLOWER_LIGHT_RANGE,
                     1.0,
+                    FLOWER_GROUND_GLOW_RADIUS,
                 );
             });
     }
@@ -264,13 +319,16 @@ fn spawn_flowers(
                 &blossom_mesh,
                 &center_mesh,
                 &stem_mesh,
+                &ground_glow_mesh,
                 red_mat,
                 red_center_mat,
                 stem_mat,
+                red_ground_glow_mat,
                 Color::srgb(1.0, 0.22, 0.18),
                 RED_FLOWER_LIGHT_INTENSITY,
                 RED_FLOWER_LIGHT_RANGE,
                 1.35,
+                RED_FLOWER_GROUND_GLOW_RADIUS,
             );
         });
 

@@ -1,5 +1,8 @@
 use bevy::{
-    core_pipeline::{bloom::Bloom, tonemapping::Tonemapping},
+    core_pipeline::{
+        bloom::{Bloom, BloomCompositeMode, BloomPrefilter},
+        tonemapping::Tonemapping,
+    },
     pbr::ShadowFilteringMethod,
     prelude::*,
 };
@@ -15,6 +18,19 @@ const CAMERA_FOLLOW_SPEED: f32 = 0.08;
 /// reading as the old isometric playfield, just with real 3D depth.
 const CAMERA_OFFSET: Vec3 = Vec3::new(-190.0, 180.0, 190.0);
 const CAMERA_LOOK_HEIGHT: f32 = 14.0;
+const FLOWER_BLOOM: Bloom = Bloom {
+    intensity: 0.04,
+    low_frequency_boost: 0.35,
+    low_frequency_boost_curvature: 0.95,
+    high_pass_frequency: 1.0,
+    prefilter: BloomPrefilter {
+        threshold: 0.65,
+        threshold_softness: 0.15,
+    },
+    composite_mode: BloomCompositeMode::EnergyConserving,
+    max_mip_dimension: 512,
+    uv_offset: 0.004,
+};
 
 #[derive(Component)]
 struct MainCamera;
@@ -35,7 +51,7 @@ fn setup_camera(mut commands: Commands) {
             ..default()
         },
         Tonemapping::ReinhardLuminance,
-        Bloom::NATURAL,
+        FLOWER_BLOOM,
         ShadowFilteringMethod::Gaussian,
         Transform::from_translation(CAMERA_OFFSET)
             .looking_at(Vec3::Y * CAMERA_LOOK_HEIGHT, Vec3::Y),

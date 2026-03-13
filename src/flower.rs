@@ -22,6 +22,14 @@ const RED_FLOWER_RADIUS: f32 = 9.0;
 const FLOWER_HEIGHT: f32 = 10.0;
 const STEM_HEIGHT: f32 = 9.0;
 const STEM_MESH_HEIGHT: f32 = 8.0;
+const FLOWER_LIGHT_HEIGHT_OFFSET: f32 = -4.0;
+const FLOWER_GROUND_FILL_HEIGHT_OFFSET: f32 = -7.5;
+const FLOWER_GROUND_FILL_INTENSITY_SCALE: f32 = 0.65;
+const FLOWER_GROUND_FILL_RANGE_BONUS: f32 = 22.0;
+const FLOWER_LIGHT_INTENSITY: f32 = 1_400_000.0;
+const FLOWER_LIGHT_RANGE: f32 = 95.0;
+const RED_FLOWER_LIGHT_INTENSITY: f32 = 2_400_000.0;
+const RED_FLOWER_LIGHT_RANGE: f32 = 120.0;
 const COLLISION_DIST_NORMAL: f32 = PLAYER_RADIUS + FLOWER_RADIUS + 2.0;
 const COLLISION_DIST_RED: f32 = PLAYER_RADIUS + RED_FLOWER_RADIUS + 2.0;
 
@@ -126,7 +134,18 @@ fn spawn_flower_cluster(
             shadows_enabled: false,
             ..default()
         },
-        Transform::from_xyz(0.0, 0.6, 0.0),
+        Transform::from_xyz(0.0, FLOWER_LIGHT_HEIGHT_OFFSET, 0.0),
+    ));
+
+    parent.spawn((
+        PointLight {
+            color: light_color,
+            intensity: intensity * FLOWER_GROUND_FILL_INTENSITY_SCALE,
+            range: range + FLOWER_GROUND_FILL_RANGE_BONUS,
+            shadows_enabled: false,
+            ..default()
+        },
+        Transform::from_xyz(0.0, FLOWER_GROUND_FILL_HEIGHT_OFFSET, 0.0),
     ));
 }
 
@@ -220,8 +239,8 @@ fn spawn_flowers(
                     center_mat.clone(),
                     stem_mat.clone(),
                     Color::srgb(1.0, 0.85, 0.65),
-                    240_000.0,
-                    50.0,
+                    FLOWER_LIGHT_INTENSITY,
+                    FLOWER_LIGHT_RANGE,
                     1.0,
                 );
             });
@@ -248,8 +267,8 @@ fn spawn_flowers(
                 red_center_mat,
                 stem_mat,
                 Color::srgb(1.0, 0.22, 0.18),
-                420_000.0,
-                75.0,
+                RED_FLOWER_LIGHT_INTENSITY,
+                RED_FLOWER_LIGHT_RANGE,
                 1.35,
             );
         });

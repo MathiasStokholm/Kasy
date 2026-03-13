@@ -21,8 +21,8 @@ fn main() {
         }))
         .insert_resource(ClearColor(Color::srgb(0.01, 0.01, 0.02)))
         .insert_resource(AmbientLight {
-            color: Color::srgb(0.02, 0.02, 0.04),
-            brightness: 15.0,
+            color: Color::srgb(0.03, 0.03, 0.05),
+            brightness: 35.0,
             ..default()
         })
         .add_plugins((

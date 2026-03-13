@@ -19,6 +19,11 @@ pub fn grid_to_world(gx: i32, gy: i32) -> Vec2 {
     )
 }
 
+/// Extract the 2-D gameplay-plane position from a 3-D world translation.
+pub fn world_to_plane(world: Vec3) -> Vec2 {
+    Vec2::new(world.x, world.z)
+}
+
 /// Convert a 2D world-space position back to the nearest isometric grid coordinate.
 ///
 /// This is the inverse of [`grid_to_world`]:

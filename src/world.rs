@@ -218,7 +218,12 @@ fn spawn_decorations(
     match tile_type {
         TileType::Jungle | TileType::JungleFloor if h % 10 < 3 => {
             let trunk = meshes.add(Cuboid::new(2.2, 10.0, 2.2));
-            let canopy = meshes.add(Sphere::new(6.0 + (h % 3) as f32).mesh().ico(3).unwrap());
+            let canopy = meshes.add(
+                Sphere::new(6.0 + (h % 3) as f32)
+                    .mesh()
+                    .ico(3)
+                    .expect("jungle canopy ico sphere should build"),
+            );
             let trunk_mat = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.18, 0.10, 0.05),
                 perceptual_roughness: 0.95,
@@ -268,7 +273,12 @@ fn spawn_decorations(
             );
         }
         TileType::Snow | TileType::Tundra if h % 8 < 2 => {
-            let crystal = meshes.add(Sphere::new(2.5).mesh().ico(2).unwrap());
+            let crystal = meshes.add(
+                Sphere::new(2.5)
+                    .mesh()
+                    .ico(2)
+                    .expect("tundra crystal ico sphere should build"),
+            );
             let crystal_mat = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.42, 0.48, 0.58),
                 perceptual_roughness: 0.2,
@@ -299,7 +309,12 @@ fn spawn_decorations(
             );
         }
         TileType::Grass if h % 12 < 1 => {
-            let stone = meshes.add(Sphere::new(2.0).mesh().ico(2).unwrap());
+            let stone = meshes.add(
+                Sphere::new(2.0)
+                    .mesh()
+                    .ico(2)
+                    .expect("grass stone ico sphere should build"),
+            );
             let stone_mat = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.22, 0.28, 0.18),
                 perceptual_roughness: 0.95,
@@ -314,7 +329,12 @@ fn spawn_decorations(
             );
         }
         TileType::Rock if h % 10 < 1 => {
-            let pebble = meshes.add(Sphere::new(2.2).mesh().ico(2).unwrap());
+            let pebble = meshes.add(
+                Sphere::new(2.2)
+                    .mesh()
+                    .ico(2)
+                    .expect("rock pebble ico sphere should build"),
+            );
             let pebble_mat = materials.add(StandardMaterial {
                 base_color: Color::srgb(0.28, 0.28, 0.30),
                 perceptual_roughness: 0.95,

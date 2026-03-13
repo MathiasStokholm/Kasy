@@ -11,6 +11,8 @@ pub struct CameraPlugin;
 /// Fraction of the distance to the player that the camera closes each frame.
 /// Lower values give a smoother (but lazier) follow; 1.0 snaps immediately.
 const CAMERA_FOLLOW_SPEED: f32 = 0.08;
+/// Offset chosen to keep the islands framed at a steep angle while still
+/// reading as the old isometric playfield, just with real 3D depth.
 const CAMERA_OFFSET: Vec3 = Vec3::new(-190.0, 180.0, 190.0);
 const CAMERA_LOOK_HEIGHT: f32 = 14.0;
 

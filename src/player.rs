@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::world::LavaTiles;
+use crate::{iso::world_to_plane, world::LavaTiles};
 
 pub struct PlayerPlugin;
 
@@ -77,11 +77,7 @@ const LAVA_MIN_SPEED: f32 = 120.0;
 const FADE_SPEED: f32 = 2.5;
 /// World-space spawn position.
 pub const PLAYER_SPAWN: Vec2 = Vec2::new(0.0, 8.0);
-const PLAYER_HEIGHT: f32 = 12.0;
-
-fn plane_position(transform: &Transform) -> Vec2 {
-    Vec2::new(transform.translation.x, transform.translation.z)
-}
+const PLAYER_ALTITUDE: f32 = 12.0;
 
 // ---------------------------------------------------------------------------
 // Startup system
@@ -128,7 +124,7 @@ fn setup_player(
             BeeVelocity(Vec2::ZERO),
             Mesh3d(body_mesh),
             MeshMaterial3d(body_material),
-            Transform::from_xyz(PLAYER_SPAWN.x, PLAYER_HEIGHT, PLAYER_SPAWN.y),
+            Transform::from_xyz(PLAYER_SPAWN.x, PLAYER_ALTITUDE, PLAYER_SPAWN.y),
             Visibility::Visible,
             InheritedVisibility::VISIBLE,
             ViewVisibility::default(),
@@ -246,7 +242,7 @@ fn handle_respawn(
 
             if respawn.alpha >= 1.0 {
                 if let Ok((mut transform, mut vel)) = player_query.get_single_mut() {
-                    transform.translation = Vec3::new(PLAYER_SPAWN.x, PLAYER_HEIGHT, PLAYER_SPAWN.y);
+                    transform.translation = Vec3::new(PLAYER_SPAWN.x, PLAYER_ALTITUDE, PLAYER_SPAWN.y);
                     transform.rotation = Quat::IDENTITY;
                     vel.0 = Vec2::ZERO;
                 }
@@ -320,7 +316,7 @@ fn check_lava(
         return;
     };
 
-    if lava.is_over_lava(plane_position(transform)) && vel.0.length() < LAVA_MIN_SPEED {
+    if lava.is_over_lava(world_to_plane(transform.translation)) && vel.0.length() < LAVA_MIN_SPEED {
         respawn_state.mode = RespawnMode::FadingOut;
         respawn_state.alpha = 0.0;
     }

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::iso::grid_to_world;
+use crate::iso::{grid_to_world, world_to_plane};
 use crate::player::{BeeVelocity, Player, PLAYER_RADIUS, PLAYER_SPAWN, RespawnMode, RespawnState};
 
 pub struct FlowerPlugin;
@@ -18,8 +18,10 @@ impl Plugin for FlowerPlugin {
 
 const FLOWER_RADIUS: f32 = 6.0;
 const RED_FLOWER_RADIUS: f32 = 9.0;
+/// Height of the blossom center above the tile surface.
 const FLOWER_HEIGHT: f32 = 10.0;
 const STEM_HEIGHT: f32 = 9.0;
+const STEM_MESH_HEIGHT: f32 = 8.0;
 const COLLISION_DIST_NORMAL: f32 = PLAYER_RADIUS + FLOWER_RADIUS + 2.0;
 const COLLISION_DIST_RED: f32 = PLAYER_RADIUS + RED_FLOWER_RADIUS + 2.0;
 
@@ -35,10 +37,6 @@ pub struct RedFlower;
 
 #[derive(Component)]
 struct WinOverlay;
-
-fn plane_position(transform: &Transform) -> Vec2 {
-    Vec2::new(transform.translation.x, transform.translation.z)
-}
 
 // ---------------------------------------------------------------------------
 // Deterministic per-tile hash (mirrors the one in world.rs)
@@ -98,7 +96,7 @@ fn spawn_flower_cluster(
         Mesh3d(stem_mesh.clone()),
         MeshMaterial3d(stem_material),
         Transform::from_xyz(0.0, -(STEM_HEIGHT * 0.5), 0.0)
-            .with_scale(Vec3::new(1.0, STEM_HEIGHT / 8.0, 1.0)),
+            .with_scale(Vec3::new(1.0, STEM_HEIGHT / STEM_MESH_HEIGHT, 1.0)),
     ));
 
     for offset in [
@@ -141,9 +139,19 @@ fn spawn_flowers(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let blossom_mesh = meshes.add(Sphere::new(FLOWER_RADIUS * 0.42).mesh().ico(3).unwrap());
-    let center_mesh = meshes.add(Sphere::new(FLOWER_RADIUS * 0.26).mesh().ico(3).unwrap());
-    let stem_mesh = meshes.add(Cuboid::new(1.6, 8.0, 1.6));
+    let blossom_mesh = meshes.add(
+        Sphere::new(FLOWER_RADIUS * 0.42)
+            .mesh()
+            .ico(3)
+            .expect("flower blossom ico sphere should build"),
+    );
+    let center_mesh = meshes.add(
+        Sphere::new(FLOWER_RADIUS * 0.26)
+            .mesh()
+            .ico(3)
+            .expect("flower center ico sphere should build"),
+    );
+    let stem_mesh = meshes.add(Cuboid::new(1.6, STEM_MESH_HEIGHT, 1.6));
 
     let pink_mat = emissive_material(
         &mut materials,
@@ -307,10 +315,10 @@ fn check_flower_collision(
     let Ok(player_tf) = player_query.get_single() else {
         return;
     };
-    let bee_pos = plane_position(player_tf);
+    let bee_pos = world_to_plane(player_tf.translation);
 
     for flower_tf in &flower_query {
-        let flower_pos = plane_position(flower_tf);
+        let flower_pos = world_to_plane(flower_tf.translation);
         if bee_pos.distance_squared(flower_pos) < COLLISION_DIST_NORMAL * COLLISION_DIST_NORMAL {
             respawn_state.mode = RespawnMode::FadingOut;
             respawn_state.alpha = 0.0;
@@ -350,10 +358,10 @@ fn check_win_collision(
     let Ok(red_tf) = red_flower_query.get_single() else {
         return;
     };
-    let flower_pos = plane_position(red_tf);
+    let flower_pos = world_to_plane(red_tf.translation);
 
     if let Ok((bee_tf, mut vel)) = player_query.get_single_mut() {
-        let bee_pos = plane_position(&bee_tf);
+        let bee_pos = world_to_plane(bee_tf.translation);
         if bee_pos.distance_squared(flower_pos) < COLLISION_DIST_RED * COLLISION_DIST_RED {
             *overlay_vis = Visibility::Inherited;
             overlay_bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.65);

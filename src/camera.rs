@@ -32,7 +32,7 @@ fn setup_camera(mut commands: Commands) {
             hdr: true,
             ..default()
         },
-        Tonemapping::TonyMcMapface,
+        Tonemapping::ReinhardLuminance,
         Bloom::NATURAL,
         ShadowFilteringMethod::Gaussian,
         Transform::from_translation(CAMERA_OFFSET)

@@ -129,6 +129,9 @@ fn setup_player(
             Mesh3d(body_mesh),
             MeshMaterial3d(body_material),
             Transform::from_xyz(PLAYER_SPAWN.x, PLAYER_HEIGHT, PLAYER_SPAWN.y),
+            Visibility::Visible,
+            InheritedVisibility::VISIBLE,
+            ViewVisibility::default(),
         ))
         .with_children(|parent| {
             parent.spawn((

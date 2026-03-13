@@ -198,6 +198,9 @@ fn spawn_flowers(
                 Flower,
                 Transform::from_xyz(world_pos.x + off_x, FLOWER_HEIGHT, world_pos.y + off_z),
                 GlobalTransform::default(),
+                Visibility::Visible,
+                InheritedVisibility::VISIBLE,
+                ViewVisibility::default(),
             ))
             .with_children(|parent| {
                 spawn_flower_cluster(
@@ -223,6 +226,9 @@ fn spawn_flowers(
             RedFlower,
             Transform::from_xyz(rpos.x, FLOWER_HEIGHT + 1.0, rpos.y),
             GlobalTransform::default(),
+            Visibility::Visible,
+            InheritedVisibility::VISIBLE,
+            ViewVisibility::default(),
         ))
         .with_children(|parent| {
             spawn_flower_cluster(

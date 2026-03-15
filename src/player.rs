@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::world::LavaTiles;
+use crate::{iso::world_to_plane, world::LavaTiles};
 
 pub struct PlayerPlugin;
 
@@ -55,7 +55,7 @@ pub enum RespawnMode {
 /// Tracks respawn state.  Stored as a resource so all systems share it.
 #[derive(Resource, Default)]
 pub struct RespawnState {
-    pub mode:  RespawnMode,
+    pub mode: RespawnMode,
     /// Current overlay alpha (0 = transparent, 1 = fully black).
     pub alpha: f32,
 }
@@ -77,6 +77,7 @@ const LAVA_MIN_SPEED: f32 = 120.0;
 const FADE_SPEED: f32 = 2.5;
 /// World-space spawn position.
 pub const PLAYER_SPAWN: Vec2 = Vec2::new(0.0, 8.0);
+const PLAYER_ALTITUDE: f32 = 12.0;
 
 // ---------------------------------------------------------------------------
 // Startup system
@@ -85,64 +86,76 @@ pub const PLAYER_SPAWN: Vec2 = Vec2::new(0.0, 8.0);
 fn setup_player(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    // --- Bee body: yellow ellipse ---
-    let body_mesh     = meshes.add(Ellipse::new(PLAYER_RADIUS, PLAYER_RADIUS * 1.5));
-    let body_material = materials.add(Color::srgb(1.0, 0.85, 0.05));
+    let body_mesh = meshes.add(Cuboid::new(12.0, 7.0, 18.0));
+    let body_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(1.0, 0.82, 0.08),
+        perceptual_roughness: 0.55,
+        ..default()
+    });
 
-    // --- Bee stripes: dark thin rectangles ---
-    let stripe_mesh     = meshes.add(Rectangle::new(PLAYER_RADIUS * 2.2, 4.0));
-    let stripe_material = materials.add(Color::srgb(0.08, 0.08, 0.08));
+    let stripe_mesh = meshes.add(Cuboid::new(12.5, 1.2, 3.0));
+    let stripe_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.05, 0.05, 0.05),
+        perceptual_roughness: 0.85,
+        ..default()
+    });
 
-    // --- Bee stinger: small dark triangle approximated by a thin rectangle ---
-    let stinger_mesh     = meshes.add(Rectangle::new(3.0, 5.0));
-    let stinger_material = materials.add(Color::srgb(0.12, 0.08, 0.04));
+    let stinger_mesh = meshes.add(Cuboid::new(3.0, 2.0, 4.0));
+    let stinger_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.18, 0.10, 0.05),
+        perceptual_roughness: 0.75,
+        ..default()
+    });
 
-    // --- Wings: translucent pale-blue circles on each side ---
-    let wing_mesh     = meshes.add(Circle::new(PLAYER_RADIUS * 1.3));
-    let wing_material = materials.add(Color::srgba(0.80, 0.92, 1.00, 0.55));
+    let wing_mesh = meshes.add(Sphere::new(4.5).mesh().ico(4).unwrap());
+    let wing_material = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.80, 0.92, 1.0, 0.35),
+        alpha_mode: AlphaMode::Blend,
+        perceptual_roughness: 0.15,
+        reflectance: 0.65,
+        ..default()
+    });
 
     commands
         .spawn((
             Player,
             BeeVelocity(Vec2::ZERO),
-            Mesh2d(body_mesh),
-            MeshMaterial2d(body_material),
-            // z = 10 keeps the bee above all tile geometry.
-            Transform::from_xyz(PLAYER_SPAWN.x, PLAYER_SPAWN.y, 10.0),
+            Mesh3d(body_mesh),
+            MeshMaterial3d(body_material),
+            Transform::from_xyz(PLAYER_SPAWN.x, PLAYER_ALTITUDE, PLAYER_SPAWN.y),
+            Visibility::Visible,
+            InheritedVisibility::VISIBLE,
+            ViewVisibility::default(),
         ))
         .with_children(|parent| {
-            // Two body stripes
             parent.spawn((
-                Mesh2d(stripe_mesh.clone()),
-                MeshMaterial2d(stripe_material.clone()),
-                Transform::from_xyz(0.0, 5.0, 0.1),
+                Mesh3d(stripe_mesh.clone()),
+                MeshMaterial3d(stripe_material.clone()),
+                Transform::from_xyz(0.0, 1.8, -3.0),
             ));
             parent.spawn((
-                Mesh2d(stripe_mesh),
-                MeshMaterial2d(stripe_material),
-                Transform::from_xyz(0.0, -3.0, 0.1),
-            ));
-
-            // Stinger at the rear (local −Y = back)
-            parent.spawn((
-                Mesh2d(stinger_mesh),
-                MeshMaterial2d(stinger_material),
-                Transform::from_xyz(0.0, -(PLAYER_RADIUS * 1.5 + 2.0), 0.1),
+                Mesh3d(stripe_mesh),
+                MeshMaterial3d(stripe_material),
+                Transform::from_xyz(0.0, 1.8, 3.0),
             ));
 
-            // Left wing
             parent.spawn((
-                Mesh2d(wing_mesh.clone()),
-                MeshMaterial2d(wing_material.clone()),
-                Transform::from_xyz(-(PLAYER_RADIUS + 4.0), 4.0, 0.2),
+                Mesh3d(stinger_mesh),
+                MeshMaterial3d(stinger_material),
+                Transform::from_xyz(0.0, -0.5, 10.0),
             ));
-            // Right wing
+
             parent.spawn((
-                Mesh2d(wing_mesh),
-                MeshMaterial2d(wing_material),
-                Transform::from_xyz(PLAYER_RADIUS + 4.0, 4.0, 0.2),
+                Mesh3d(wing_mesh.clone()),
+                MeshMaterial3d(wing_material.clone()),
+                Transform::from_xyz(-6.5, 4.0, -1.0).with_scale(Vec3::new(1.2, 0.45, 0.9)),
+            ));
+            parent.spawn((
+                Mesh3d(wing_mesh),
+                MeshMaterial3d(wing_material),
+                Transform::from_xyz(6.5, 4.0, -1.0).with_scale(Vec3::new(1.2, 0.45, 0.9)),
             ));
         });
 
@@ -158,46 +171,50 @@ fn setup_player(
             ..default()
         },
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.0)),
-        // Render on top of everything.
         GlobalZIndex(1000),
     ));
 
-    // HUD: controls hint + speed readout in the top-left corner
-    commands.spawn((
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(12.0),
-            top:  Val::Px(12.0),
-            flex_direction: FlexDirection::Column,
-            row_gap: Val::Px(4.0),
-            ..default()
-        },
-        GlobalZIndex(500),
-    ))
-    .with_children(|parent| {
-        let hint_color = Color::srgba(1.0, 1.0, 1.0, 0.85);
-        for line in [
-            "🐝  SPACE  – thrust",
-            "◀ ▶  Steer",
-            "Find the RED flower!",
-            "Avoid all other flowers",
-            "Fly fast over LAVA",
-        ] {
-            parent.spawn((
-                Text::new(line),
-                TextFont { font_size: 16.0, ..default() },
-                TextColor(hint_color),
-            ));
-        }
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(12.0),
+                top: Val::Px(12.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(4.0),
+                ..default()
+            },
+            GlobalZIndex(500),
+        ))
+        .with_children(|parent| {
+            let hint_color = Color::srgba(1.0, 1.0, 1.0, 0.85);
+            for line in [
+                "🐝  SPACE  – thrust",
+                "◀ ▶  Steer",
+                "Find the RED flower!",
+                "Avoid all other flowers",
+                "Fly fast over LAVA",
+            ] {
+                parent.spawn((
+                    Text::new(line),
+                    TextFont {
+                        font_size: 16.0,
+                        ..default()
+                    },
+                    TextColor(hint_color),
+                ));
+            }
 
-        // Speed indicator (updated each frame by update_speed_hud)
-        parent.spawn((
-            SpeedHud,
-            Text::new("Speed: 0"),
-            TextFont { font_size: 16.0, ..default() },
-            TextColor(Color::srgb(1.0, 1.0, 0.4)),
-        ));
-    });
+            parent.spawn((
+                SpeedHud,
+                Text::new("Speed: 0"),
+                TextFont {
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 1.0, 0.4)),
+            ));
+        });
 }
 
 // ---------------------------------------------------------------------------
@@ -224,10 +241,8 @@ fn handle_respawn(
             overlay.0 = Color::srgba(0.0, 0.0, 0.0, respawn.alpha);
 
             if respawn.alpha >= 1.0 {
-                // Teleport back to spawn and zero out velocity.
                 if let Ok((mut transform, mut vel)) = player_query.get_single_mut() {
-                    transform.translation.x = PLAYER_SPAWN.x;
-                    transform.translation.y = PLAYER_SPAWN.y;
+                    transform.translation = Vec3::new(PLAYER_SPAWN.x, PLAYER_ALTITUDE, PLAYER_SPAWN.y);
                     transform.rotation = Quat::IDENTITY;
                     vel.0 = Vec2::ZERO;
                 }
@@ -248,9 +263,6 @@ fn handle_respawn(
 }
 
 /// Steer and thrust the bee.
-///
-/// * **Left/Right arrow** – rotate the bee.
-/// * **Space** – thrust in the facing direction; velocity decays with drag.
 fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
@@ -267,47 +279,45 @@ fn player_movement(
 
     let dt = time.delta_secs();
 
-    // Steering
     if keyboard.pressed(KeyCode::ArrowLeft) {
-        transform.rotation *= Quat::from_rotation_z(TURN_SPEED * dt);
+        transform.rotate_y(TURN_SPEED * dt);
     }
     if keyboard.pressed(KeyCode::ArrowRight) {
-        transform.rotation *= Quat::from_rotation_z(-TURN_SPEED * dt);
+        transform.rotate_y(-TURN_SPEED * dt);
     }
 
-    // Thrust: accelerate along the bee's local +Y axis.
     if keyboard.pressed(KeyCode::Space) {
-        let forward = (transform.rotation * Vec3::Y).truncate();
-        vel.0 += forward * THRUST_ACCEL * dt;
+        let forward = transform.rotation * -Vec3::Z;
+        vel.0 += Vec2::new(forward.x, forward.z) * THRUST_ACCEL * dt;
         let speed = vel.0.length();
         if speed > MAX_SPEED {
             vel.0 = vel.0 / speed * MAX_SPEED;
         }
     }
 
-    // Linear drag – bee gradually slows when not thrusting.
     vel.0 *= (1.0 - LINEAR_DRAG * dt).max(0.0);
-
-    // Integrate position.
     transform.translation.x += vel.0.x * dt;
-    transform.translation.y += vel.0.y * dt;
+    transform.translation.z += vel.0.y * dt;
 }
 
 /// Trigger a respawn if the bee flies over lava while moving too slowly.
 fn check_lava(
-    lava_tiles:        Option<Res<LavaTiles>>,
+    lava_tiles: Option<Res<LavaTiles>>,
     mut respawn_state: ResMut<RespawnState>,
-    player_query:      Query<(&Transform, &BeeVelocity), With<Player>>,
+    player_query: Query<(&Transform, &BeeVelocity), With<Player>>,
 ) {
     if respawn_state.mode != RespawnMode::Normal {
         return;
     }
-    let Some(lava) = lava_tiles else { return; };
-    let Ok((transform, vel)) = player_query.get_single() else { return; };
+    let Some(lava) = lava_tiles else {
+        return;
+    };
+    let Ok((transform, vel)) = player_query.get_single() else {
+        return;
+    };
 
-    let pos = transform.translation.truncate();
-    if lava.is_over_lava(pos) && vel.0.length() < LAVA_MIN_SPEED {
-        respawn_state.mode  = RespawnMode::FadingOut;
+    if lava.is_over_lava(world_to_plane(transform.translation)) && vel.0.length() < LAVA_MIN_SPEED {
+        respawn_state.mode = RespawnMode::FadingOut;
         respawn_state.alpha = 0.0;
     }
 }
@@ -317,8 +327,12 @@ fn update_speed_hud(
     player_query: Query<&BeeVelocity, With<Player>>,
     mut hud_query: Query<&mut Text, With<SpeedHud>>,
 ) {
-    let Ok(vel) = player_query.get_single() else { return; };
-    let Ok(mut text) = hud_query.get_single_mut() else { return; };
+    let Ok(vel) = player_query.get_single() else {
+        return;
+    };
+    let Ok(mut text) = hud_query.get_single_mut() else {
+        return;
+    };
     let speed = vel.0.length() as u32;
     *text = Text::new(format!("Speed: {speed}  (lava min: {LAVA_MIN_SPEED})"));
 }

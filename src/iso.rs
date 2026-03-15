@@ -19,10 +19,9 @@ pub fn grid_to_world(gx: i32, gy: i32) -> Vec2 {
     )
 }
 
-/// Return a Z depth so that tiles closer to the camera (larger `gx + gy`)
-/// are rendered on top of tiles that are further away.
-pub fn grid_to_depth(gx: i32, gy: i32) -> f32 {
-    (gx + gy) as f32 * 0.01
+/// Extract the 2-D gameplay-plane position from a 3-D world translation.
+pub fn world_to_plane(world: Vec3) -> Vec2 {
+    Vec2::new(world.x, world.z)
 }
 
 /// Convert a 2D world-space position back to the nearest isometric grid coordinate.

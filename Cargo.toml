@@ -12,12 +12,14 @@ bevy = { version = "0.15", default-features = false, features = [
     # Core subsystems
     "bevy_asset",
     "bevy_core_pipeline",
+    "bevy_pbr",
     "bevy_render",
     "bevy_sprite",
     "bevy_text",
     "bevy_ui",
     "bevy_winit",
     "default_font",
+    "experimental_pbr_pcss",
     # Linux windowing (X11); also works on CI runners
     "x11",
     # WebGPU renderer – enables the modern WebGPU backend (required for WASM deployments)

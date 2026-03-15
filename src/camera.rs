@@ -3,7 +3,6 @@ use bevy::{
         bloom::{Bloom, BloomCompositeMode, BloomPrefilter},
         tonemapping::Tonemapping,
     },
-    pbr::ShadowFilteringMethod,
     prelude::*,
 };
 
@@ -52,7 +51,6 @@ fn setup_camera(mut commands: Commands) {
         },
         Tonemapping::ReinhardLuminance,
         FLOWER_BLOOM,
-        ShadowFilteringMethod::Gaussian,
         Transform::from_translation(CAMERA_OFFSET)
             .looking_at(Vec3::Y * CAMERA_LOOK_HEIGHT, Vec3::Y),
     ));

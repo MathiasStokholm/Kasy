@@ -42,7 +42,7 @@ jobs:
 
       - name: Install wasm-bindgen-cli
         if: steps.cache-cargo.outputs.cache-hit != 'true'
-        run: cargo install wasm-bindgen-cli --locked
+        run: which wasm-bindgen || cargo install wasm-bindgen-cli --locked
 
       - name: Build for WebAssembly
         run: cargo build --profile wasm-release --target wasm32-unknown-unknown

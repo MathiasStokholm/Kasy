@@ -26,6 +26,42 @@
   </head>
   <body>
     <canvas id="bevy"></canvas>
+    <!--
+      Register the cross-origin isolation service worker.
+      Chrome requires Cross-Origin-Opener-Policy and
+      Cross-Origin-Embedder-Policy headers for WebGPU to be available.
+      GitHub Pages cannot set HTTP headers directly, so a service worker
+      is used to inject them.  If the page is already cross-origin
+      isolated (e.g. running locally with the right headers) the worker
+      is still registered but its header-stamping has no practical effect.
+    -->
+    <script>
+      (() => {
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker
+            .register("coi-serviceworker.js")
+            .then((registration) => {
+              // If the service worker is installing for the first time
+              // (no active controller yet) wait for it to activate, then
+              // reload so that all subsequent requests are handled by it.
+              if (!navigator.serviceWorker.controller) {
+                const worker =
+                  registration.installing || registration.waiting;
+                if (worker) {
+                  worker.addEventListener("statechange", (e) => {
+                    if (e.target.state === "activated") {
+                      window.location.reload();
+                    }
+                  });
+                }
+              }
+            })
+            .catch((err) =>
+              console.warn("Service worker registration failed:", err)
+            );
+        }
+      })();
+    </script>
     <script type="module">
       import init from "./kasy.js";
       await init();

@@ -29,31 +29,29 @@ pub struct WorldTiles(pub HashSet<(i32, i32)>);
 impl LavaTiles {
     /// Returns `true` when `world_pos` is above at least one lava/volcanic tile.
     pub fn is_over_lava(&self, world_pos: Vec2) -> bool {
-        let (gx, gy) = world_to_grid(world_pos);
-        for dx in -1..=1_i32 {
-            for dy in -1..=1_i32 {
-                if self.0.contains(&(gx + dx, gy + dy)) {
-                    return true;
-                }
-            }
-        }
-        false
+        is_over_set(&self.0, world_pos)
     }
 }
 
 impl WorldTiles {
     /// Returns `true` when `world_pos` is above at least one tile of any type.
     pub fn is_over_tile(&self, world_pos: Vec2) -> bool {
-        let (gx, gy) = world_to_grid(world_pos);
-        for dx in -1..=1_i32 {
-            for dy in -1..=1_i32 {
-                if self.0.contains(&(gx + dx, gy + dy)) {
-                    return true;
-                }
+        is_over_set(&self.0, world_pos)
+    }
+}
+
+/// Checks whether `world_pos` maps to a grid cell (or any of its 8 neighbours)
+/// that is present in `set`.  Used by both [`LavaTiles`] and [`WorldTiles`].
+fn is_over_set(set: &HashSet<(i32, i32)>, world_pos: Vec2) -> bool {
+    let (gx, gy) = world_to_grid(world_pos);
+    for dx in -1..=1_i32 {
+        for dy in -1..=1_i32 {
+            if set.contains(&(gx + dx, gy + dy)) {
+                return true;
             }
         }
-        false
     }
+    false
 }
 
 // ---------------------------------------------------------------------------

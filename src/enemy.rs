@@ -25,6 +25,9 @@ const ENEMY_SPEED: f32 = 55.0;
 const ENEMY_CHASE_SPEED: f32 = 90.0;
 /// Distance at which an enemy switches from wandering to chasing the player.
 const CHASE_RANGE: f32 = 130.0;
+/// Minimum distance to the player before an enemy stops moving toward them,
+/// preventing jitter when the enemy is already on top of the player.
+const MIN_CHASE_DISTANCE: f32 = 0.5;
 /// How long (seconds) an enemy travels in one direction before picking a new one.
 const WANDER_INTERVAL: f32 = 2.5;
 /// Height of enemies above the ground plane.
@@ -128,7 +131,7 @@ fn enemy_wander(
             Some(pxz) => {
                 let to_player = pxz - enemy_xz;
                 let dist = to_player.length();
-                if dist < CHASE_RANGE && dist > 0.5 {
+                if dist < CHASE_RANGE && dist > MIN_CHASE_DISTANCE {
                     (true, to_player.normalize() * ENEMY_CHASE_SPEED)
                 } else {
                     (false, enemy.velocity)

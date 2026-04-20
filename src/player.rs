@@ -215,7 +215,7 @@ fn setup_player(
             let hint_color = Color::srgba(1.0, 1.0, 1.0, 0.85);
             for line in [
                 "🐝  SPACE  – thrust",
-                "🖱  Mouse  – aim & steer",
+                "🖱  Mouse  – aim",
                 "🖱  Click  – fire water gun!",
                 "Find the RED flower!",
                 "Avoid all other flowers",

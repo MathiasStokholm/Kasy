@@ -1,9 +1,11 @@
 use bevy::prelude::*;
 
 mod camera;
+mod enemy;
 mod flower;
 mod iso;
 mod player;
+mod projectile;
 mod world;
 
 fn main() {
@@ -30,6 +32,8 @@ fn main() {
             camera::CameraPlugin,
             player::PlayerPlugin,
             flower::FlowerPlugin,
+            enemy::EnemyPlugin,
+            projectile::ProjectilePlugin,
         ))
         .run();
 }

@@ -21,9 +21,29 @@ impl Plugin for WorldPlugin {
 #[derive(Resource, Default)]
 pub struct LavaTiles(pub HashSet<(i32, i32)>);
 
+/// Set of every grid position that has any tile.
+/// Used by enemies to check they remain on the islands.
+#[derive(Resource, Default)]
+pub struct WorldTiles(pub HashSet<(i32, i32)>);
+
 impl LavaTiles {
     /// Returns `true` when `world_pos` is above at least one lava/volcanic tile.
     pub fn is_over_lava(&self, world_pos: Vec2) -> bool {
+        let (gx, gy) = world_to_grid(world_pos);
+        for dx in -1..=1_i32 {
+            for dy in -1..=1_i32 {
+                if self.0.contains(&(gx + dx, gy + dy)) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}
+
+impl WorldTiles {
+    /// Returns `true` when `world_pos` is above at least one tile of any type.
+    pub fn is_over_tile(&self, world_pos: Vec2) -> bool {
         let (gx, gy) = world_to_grid(world_pos);
         for dx in -1..=1_i32 {
             for dy in -1..=1_i32 {
@@ -369,6 +389,12 @@ fn setup_world(
         .map(|(gx, gy, _)| (*gx, *gy))
         .collect();
     commands.insert_resource(LavaTiles(lava_set));
+
+    let tile_set: HashSet<(i32, i32)> = tiles
+        .iter()
+        .map(|(gx, gy, _)| (*gx, *gy))
+        .collect();
+    commands.insert_resource(WorldTiles(tile_set));
 
     commands.spawn((
         DirectionalLight {

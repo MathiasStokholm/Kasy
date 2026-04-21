@@ -387,7 +387,7 @@ fn check_flower_collision(
     player_query: Query<&Transform, With<Player>>,
     flower_query: Query<&Transform, With<Flower>>,
 ) {
-    if respawn_state.mode != RespawnMode::Normal {
+    if respawn_state.won || respawn_state.mode != RespawnMode::Normal {
         return;
     }
     let Ok(player_tf) = player_query.get_single() else {
@@ -410,7 +410,7 @@ fn check_win_collision(
     red_flower_query: Query<&Transform, (With<RedFlower>, Without<Player>)>,
     mut win_overlay: Query<(&mut Visibility, &mut BackgroundColor), With<WinOverlay>>,
     mut player_query: Query<(&mut Transform, &mut BeeVelocity), (With<Player>, Without<RedFlower>)>,
-    respawn: Res<RespawnState>,
+    mut respawn: ResMut<RespawnState>,
 ) {
     let Ok((mut overlay_vis, mut overlay_bg)) = win_overlay.get_single_mut() else {
         return;
@@ -420,6 +420,7 @@ fn check_win_collision(
         if keyboard.just_pressed(KeyCode::Space) {
             *overlay_vis = Visibility::Hidden;
             overlay_bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.0);
+            respawn.won = false;
             if let Ok((mut tf, mut vel)) = player_query.get_single_mut() {
                 tf.translation = Vec3::new(
                     PLAYER_SPAWN.x,
@@ -448,6 +449,7 @@ fn check_win_collision(
             *overlay_vis = Visibility::Inherited;
             overlay_bg.0 = Color::srgba(0.0, 0.0, 0.0, 0.65);
             vel.0 = Vec2::ZERO;
+            respawn.won = true;
         }
     }
 }

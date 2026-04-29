@@ -1,36 +1,28 @@
 use bevy::prelude::*;
 
 use crate::enemy::{Enemy, ENEMY_RADIUS};
+use crate::player::{Score, SpawnProjectile, PLAYER_ALTITUDE};
 
 pub struct ProjectilePlugin;
 
 /// Speed of a water-gun projectile in world-space units per second.
-const PROJECTILE_SPEED: f32 = 400.0;
+const PROJECTILE_SPEED: f32 = 450.0;
 /// Seconds before an un-hit projectile despawns.
-const PROJECTILE_LIFETIME: f32 = 2.5;
-/// Visual radius of the projectile in pixels.
-const PROJECTILE_RADIUS: f32 = 5.0;
-/// Combined hit radius: projectile centre must be within this distance of an
-/// enemy centre for a hit to register.
+const PROJECTILE_LIFETIME: f32 = 3.0;
+/// Visual radius of the projectile sphere in world-space units.
+const PROJECTILE_RADIUS: f32 = 4.0;
+/// Combined hit radius for enemy–projectile collision.
 const HIT_RADIUS: f32 = PROJECTILE_RADIUS + ENEMY_RADIUS;
 
 // ---------------------------------------------------------------------------
-// Event / component types
+// Component
 // ---------------------------------------------------------------------------
-
-/// Sent by the player system when the left mouse button is clicked.
-#[derive(Event)]
-pub struct SpawnProjectile {
-    /// World-space origin (player position).
-    pub position: Vec2,
-    /// Normalised direction toward the cursor.
-    pub direction: Vec2,
-}
 
 /// Runtime state stored on each active projectile entity.
 #[derive(Component)]
 struct Projectile {
-    velocity: Vec2,
+    /// Velocity in world-space (XZ plane; Y is always 0).
+    velocity: Vec3,
     lifetime: f32,
 }
 
@@ -40,7 +32,7 @@ struct Projectile {
 
 impl Plugin for ProjectilePlugin {
     fn build(&self, app: &mut App) {
-        app.add_event::<SpawnProjectile>().add_systems(
+        app.add_systems(
             Update,
             (
                 handle_spawn_projectile,
@@ -56,24 +48,35 @@ impl Plugin for ProjectilePlugin {
 // Systems
 // ---------------------------------------------------------------------------
 
-/// Spawn a new projectile entity for every received [`SpawnProjectile`] event.
+/// Spawn a new 3-D projectile for every received [`SpawnProjectile`] event.
 fn handle_spawn_projectile(
     mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut events: EventReader<SpawnProjectile>,
+    mut meshes:   ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut events:   EventReader<SpawnProjectile>,
 ) {
     for event in events.read() {
+        let velocity = Vec3::new(
+            event.direction.x * PROJECTILE_SPEED,
+            0.0,
+            event.direction.y * PROJECTILE_SPEED,
+        );
         commands.spawn((
-            Projectile {
-                velocity: event.direction * PROJECTILE_SPEED,
-                lifetime: PROJECTILE_LIFETIME,
-            },
-            Mesh2d(meshes.add(Circle::new(PROJECTILE_RADIUS))),
-            // Translucent bright blue – looks like a water droplet
-            MeshMaterial2d(materials.add(Color::srgba(0.30, 0.60, 1.00, 0.90))),
-            // z=15 keeps projectiles in front of tiles (z≈0) and the player (z=10)
-            Transform::from_xyz(event.position.x, event.position.y, 15.0),
+            Projectile { velocity, lifetime: PROJECTILE_LIFETIME },
+            Mesh3d(meshes.add(
+                Sphere::new(PROJECTILE_RADIUS)
+                    .mesh()
+                    .ico(2)
+                    .expect("projectile ico sphere should build"),
+            )),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgba(0.30, 0.70, 1.00, 0.90),
+                emissive: LinearRgba::rgb(0.5, 1.5, 3.0),
+                alpha_mode: AlphaMode::Blend,
+                ..default()
+            })),
+            // Spawn at the player's XZ position, at flying altitude.
+            Transform::from_xyz(event.position.x, PLAYER_ALTITUDE, event.position.y),
         ));
     }
 }
@@ -84,10 +87,8 @@ fn move_projectiles(
     time: Res<Time>,
 ) {
     for (mut transform, mut projectile) in &mut query {
-        let delta = projectile.velocity * time.delta_secs();
-        transform.translation.x += delta.x;
-        transform.translation.y += delta.y;
-        projectile.lifetime -= time.delta_secs();
+        transform.translation += projectile.velocity * time.delta_secs();
+        projectile.lifetime   -= time.delta_secs();
     }
 }
 
@@ -103,19 +104,22 @@ fn cleanup_projectiles(
     }
 }
 
-/// Check every live projectile against every enemy.  On a hit, despawn both.
+/// Check every live projectile against every enemy.  On a hit, despawn both
+/// and increment the player's score.
 fn check_projectile_hits(
     mut commands: Commands,
+    mut score: ResMut<Score>,
     projectile_query: Query<(Entity, &Transform), With<Projectile>>,
-    enemy_query: Query<(Entity, &Transform), With<Enemy>>,
+    enemy_query:      Query<(Entity, &Transform), With<Enemy>>,
 ) {
-    for (proj_entity, proj_transform) in &projectile_query {
-        let proj_pos = proj_transform.translation.truncate();
-        for (enemy_entity, enemy_transform) in &enemy_query {
-            let enemy_pos = enemy_transform.translation.truncate();
-            if proj_pos.distance_squared(enemy_pos) < HIT_RADIUS * HIT_RADIUS {
+    for (proj_entity, proj_tf) in &projectile_query {
+        let proj_xz = Vec2::new(proj_tf.translation.x, proj_tf.translation.z);
+        for (enemy_entity, enemy_tf) in &enemy_query {
+            let enemy_xz = Vec2::new(enemy_tf.translation.x, enemy_tf.translation.z);
+            if proj_xz.distance_squared(enemy_xz) < HIT_RADIUS * HIT_RADIUS {
                 commands.entity(proj_entity).despawn_recursive();
                 commands.entity(enemy_entity).despawn_recursive();
+                score.enemies_defeated += 1;
                 // Each projectile can only hit one enemy.
                 break;
             }

@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 
 use crate::{iso::world_to_plane, world::LavaTiles};
 
@@ -7,14 +8,18 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<RespawnState>()
+            .init_resource::<Score>()
+            .add_event::<SpawnProjectile>()
             .add_systems(Startup, setup_player)
             .add_systems(
                 Update,
                 (
                     handle_respawn,
                     player_movement.after(handle_respawn),
+                    player_aim_and_shoot.after(handle_respawn),
                     check_lava.after(player_movement),
                     update_speed_hud.after(player_movement),
+                    update_score_hud,
                 ),
             );
     }
@@ -40,6 +45,25 @@ struct FadeOverlay;
 #[derive(Component)]
 struct SpeedHud;
 
+/// Marker for the score text in the HUD.
+#[derive(Component)]
+struct ScoreHud;
+
+/// Event fired when the player wants to fire the water gun.
+#[derive(Event)]
+pub struct SpawnProjectile {
+    /// World-space origin (player XZ position).
+    pub position: Vec2,
+    /// Normalised direction in the XZ plane toward the cursor.
+    pub direction: Vec2,
+}
+
+/// Tracks the number of enemies defeated this session.
+#[derive(Resource, Default)]
+pub struct Score {
+    pub enemies_defeated: u32,
+}
+
 /// Which phase of the respawn sequence we are in.
 #[derive(Default, PartialEq)]
 pub enum RespawnMode {
@@ -58,13 +82,14 @@ pub struct RespawnState {
     pub mode: RespawnMode,
     /// Current overlay alpha (0 = transparent, 1 = fully black).
     pub alpha: f32,
+    /// Set to `true` while the win overlay is displayed; prevents other
+    /// hazards (enemies, flowers, lava) from interfering with the win screen.
+    pub won: bool,
 }
 
 /// Radius of the bee body sprite in pixels (used for collision checks).
 pub const PLAYER_RADIUS: f32 = 10.0;
 
-/// How fast the bee can turn (radians per second).
-const TURN_SPEED: f32 = 3.0;
 /// Thrust acceleration when Space is held (world units per second²).
 const THRUST_ACCEL: f32 = 320.0;
 /// Maximum flight speed (world units per second).
@@ -77,7 +102,7 @@ const LAVA_MIN_SPEED: f32 = 120.0;
 const FADE_SPEED: f32 = 2.5;
 /// World-space spawn position.
 pub const PLAYER_SPAWN: Vec2 = Vec2::new(0.0, 8.0);
-const PLAYER_ALTITUDE: f32 = 12.0;
+pub const PLAYER_ALTITUDE: f32 = 12.0;
 
 // ---------------------------------------------------------------------------
 // Startup system
@@ -190,10 +215,12 @@ fn setup_player(
             let hint_color = Color::srgba(1.0, 1.0, 1.0, 0.85);
             for line in [
                 "🐝  SPACE  – thrust",
-                "◀ ▶  Steer",
+                "🖱  Mouse  – aim",
+                "🖱  Click  – fire water gun!",
                 "Find the RED flower!",
                 "Avoid all other flowers",
                 "Fly fast over LAVA",
+                "Shoot enemies for points!",
             ] {
                 parent.spawn((
                     Text::new(line),
@@ -213,6 +240,16 @@ fn setup_player(
                     ..default()
                 },
                 TextColor(Color::srgb(1.0, 1.0, 0.4)),
+            ));
+
+            parent.spawn((
+                ScoreHud,
+                Text::new("Enemies defeated: 0"),
+                TextFont {
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.4, 1.0, 0.5)),
             ));
         });
 }
@@ -262,7 +299,7 @@ fn handle_respawn(
     }
 }
 
-/// Steer and thrust the bee.
+/// Thrust the bee forward; the bee's facing direction is controlled by the mouse.
 fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
@@ -279,13 +316,6 @@ fn player_movement(
 
     let dt = time.delta_secs();
 
-    if keyboard.pressed(KeyCode::ArrowLeft) {
-        transform.rotate_y(TURN_SPEED * dt);
-    }
-    if keyboard.pressed(KeyCode::ArrowRight) {
-        transform.rotate_y(-TURN_SPEED * dt);
-    }
-
     if keyboard.pressed(KeyCode::Space) {
         let forward = transform.rotation * -Vec3::Z;
         vel.0 += Vec2::new(forward.x, forward.z) * THRUST_ACCEL * dt;
@@ -300,13 +330,62 @@ fn player_movement(
     transform.translation.z += vel.0.y * dt;
 }
 
+/// Rotate the bee toward the mouse cursor and fire a projectile on left-click.
+fn player_aim_and_shoot(
+    windows: Query<&Window, With<PrimaryWindow>>,
+    camera_query: Query<(&Camera, &GlobalTransform)>,
+    mut player_query: Query<(&mut Transform, &BeeVelocity), With<Player>>,
+    buttons: Res<ButtonInput<MouseButton>>,
+    respawn: Res<RespawnState>,
+    mut spawn_events: EventWriter<SpawnProjectile>,
+) {
+    if respawn.mode != RespawnMode::Normal {
+        return;
+    }
+
+    let Ok(window) = windows.get_single() else { return; };
+    let Ok((camera, cam_transform)) = camera_query.get_single() else { return; };
+    let Ok((mut player_tf, _vel)) = player_query.get_single_mut() else { return; };
+    let Some(cursor_pos) = window.cursor_position() else { return; };
+    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else { return; };
+
+    // Intersect the camera ray with the horizontal plane at player altitude.
+    let dir = ray.direction.as_vec3();
+    if dir.y.abs() < 0.0001 {
+        return;
+    }
+    let t = (PLAYER_ALTITUDE - ray.origin.y) / dir.y;
+    if t <= 0.0 {
+        return;
+    }
+
+    let aim_world = ray.origin + dir * t;
+    let player_xz = Vec2::new(player_tf.translation.x, player_tf.translation.z);
+    let aim_xz = Vec2::new(aim_world.x, aim_world.z);
+    let aim_dir = (aim_xz - player_xz).normalize_or_zero();
+
+    if aim_dir.length_squared() > 0.01 {
+        // Rotate bee to face aim direction (-Z is the bee's forward).
+        // Desired yaw: -Z maps to (aim_dir.x, aim_dir.y) in XZ.
+        let yaw = f32::atan2(-aim_dir.x, -aim_dir.y);
+        player_tf.rotation = Quat::from_rotation_y(yaw);
+    }
+
+    if buttons.just_pressed(MouseButton::Left) && aim_dir.length_squared() > 0.01 {
+        spawn_events.send(SpawnProjectile {
+            position: player_xz,
+            direction: aim_dir,
+        });
+    }
+}
+
 /// Trigger a respawn if the bee flies over lava while moving too slowly.
 fn check_lava(
     lava_tiles: Option<Res<LavaTiles>>,
     mut respawn_state: ResMut<RespawnState>,
     player_query: Query<(&Transform, &BeeVelocity), With<Player>>,
 ) {
-    if respawn_state.mode != RespawnMode::Normal {
+    if respawn_state.won || respawn_state.mode != RespawnMode::Normal {
         return;
     }
     let Some(lava) = lava_tiles else {
@@ -335,4 +414,15 @@ fn update_speed_hud(
     };
     let speed = vel.0.length() as u32;
     *text = Text::new(format!("Speed: {speed}  (lava min: {LAVA_MIN_SPEED})"));
+}
+
+/// Update the enemies-defeated counter in the HUD every frame.
+fn update_score_hud(
+    score: Res<Score>,
+    mut hud_query: Query<&mut Text, With<ScoreHud>>,
+) {
+    let Ok(mut text) = hud_query.get_single_mut() else {
+        return;
+    };
+    *text = Text::new(format!("Enemies defeated: {}", score.enemies_defeated));
 }

@@ -58,7 +58,9 @@ jobs:
             target/wasm32-unknown-unknown/wasm-release/kasy.wasm
 
       - name: Copy web assets
-        run: cp index.html dist/
+        run: |
+          cp index.html dist/
+          cp -R assets dist/assets
 
       - name: Upload Pages artefact
         uses: actions/upload-pages-artifact@v3

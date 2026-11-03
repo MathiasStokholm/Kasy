@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 
-use crate::{iso::world_to_plane, world::LavaTiles};
+use crate::{
+    iso::world_to_plane,
+    world::{LavaTiles, TerrainHeights},
+};
 
 pub struct PlayerPlugin;
 
@@ -36,6 +39,10 @@ pub struct Player;
 /// Current velocity of the bee in world-space units per second.
 #[derive(Component)]
 pub struct BeeVelocity(pub Vec2);
+
+/// Vertical velocity of the bee; positive while rising from a jump.
+#[derive(Component, Default)]
+pub struct BeeVertical(pub f32);
 
 /// Marker for the full-screen black overlay used for the fade-to-black effect.
 #[derive(Component)]
@@ -103,6 +110,14 @@ const FADE_SPEED: f32 = 2.5;
 /// World-space spawn position.
 pub const PLAYER_SPAWN: Vec2 = Vec2::new(0.0, 8.0);
 pub const PLAYER_ALTITUDE: f32 = 12.0;
+/// Downward acceleration applied while the bee is airborne.
+const GRAVITY: f32 = 220.0;
+/// Initial upward speed of a jump; peaks roughly 38 units above flight altitude.
+const JUMP_SPEED: f32 = 130.0;
+/// Room the bee needs above the top of a stacked tile to rest on or pass over it.
+const WALL_CLEARANCE: f32 = 3.0;
+/// Height above flight altitude at which the bee is considered safe from lava.
+const LAVA_SAFE_HEIGHT: f32 = 6.0;
 
 // ---------------------------------------------------------------------------
 // Startup system
@@ -147,6 +162,7 @@ fn setup_player(
         .spawn((
             Player,
             BeeVelocity(Vec2::ZERO),
+            BeeVertical::default(),
             Mesh3d(body_mesh),
             MeshMaterial3d(body_material),
             Transform::from_xyz(PLAYER_SPAWN.x, PLAYER_ALTITUDE, PLAYER_SPAWN.y),
@@ -215,6 +231,7 @@ fn setup_player(
             let hint_color = Color::srgba(1.0, 1.0, 1.0, 0.85);
             for line in [
                 "🐝  SPACE  – thrust",
+                "⇧  SHIFT  – jump",
                 "🖱  Mouse  – aim",
                 "🖱  Click  – fire water gun!",
                 "Find the RED flower!",
@@ -262,7 +279,7 @@ fn setup_player(
 fn handle_respawn(
     time: Res<Time>,
     mut respawn: ResMut<RespawnState>,
-    mut player_query: Query<(&mut Transform, &mut BeeVelocity), With<Player>>,
+    mut player_query: Query<(&mut Transform, &mut BeeVelocity, &mut BeeVertical), With<Player>>,
     mut overlay_query: Query<&mut BackgroundColor, With<FadeOverlay>>,
 ) {
     let dt = time.delta_secs();
@@ -278,10 +295,12 @@ fn handle_respawn(
             overlay.0 = Color::srgba(0.0, 0.0, 0.0, respawn.alpha);
 
             if respawn.alpha >= 1.0 {
-                if let Ok((mut transform, mut vel)) = player_query.get_single_mut() {
-                    transform.translation = Vec3::new(PLAYER_SPAWN.x, PLAYER_ALTITUDE, PLAYER_SPAWN.y);
+                if let Ok((mut transform, mut vel, mut vertical)) = player_query.get_single_mut() {
+                    transform.translation =
+                        Vec3::new(PLAYER_SPAWN.x, PLAYER_ALTITUDE, PLAYER_SPAWN.y);
                     transform.rotation = Quat::IDENTITY;
                     vel.0 = Vec2::ZERO;
+                    vertical.0 = 0.0;
                 }
                 respawn.mode = RespawnMode::FadingIn;
             }
@@ -304,17 +323,19 @@ fn player_movement(
     keyboard: Res<ButtonInput<KeyCode>>,
     time: Res<Time>,
     respawn: Res<RespawnState>,
-    mut query: Query<(&mut Transform, &mut BeeVelocity), With<Player>>,
+    terrain: Option<Res<TerrainHeights>>,
+    mut query: Query<(&mut Transform, &mut BeeVelocity, &mut BeeVertical), With<Player>>,
 ) {
     if respawn.mode != RespawnMode::Normal {
         return;
     }
 
-    let Ok((mut transform, mut vel)) = query.get_single_mut() else {
+    let Ok((mut transform, mut vel, mut vertical)) = query.get_single_mut() else {
         return;
     };
 
     let dt = time.delta_secs();
+    let terrain = terrain.as_deref();
 
     if keyboard.pressed(KeyCode::Space) {
         let forward = transform.rotation * -Vec3::Z;
@@ -326,8 +347,55 @@ fn player_movement(
     }
 
     vel.0 *= (1.0 - LINEAR_DRAG * dt).max(0.0);
-    transform.translation.x += vel.0.x * dt;
-    transform.translation.z += vel.0.y * dt;
+
+    // Horizontal motion, each axis checked separately so the bee can slide along walls.
+    let y = transform.translation.y;
+    let next_x = transform.translation.x + vel.0.x * dt;
+    if is_blocked(terrain, Vec2::new(next_x, transform.translation.z), y) {
+        vel.0.x = 0.0;
+    } else {
+        transform.translation.x = next_x;
+    }
+    let next_z = transform.translation.z + vel.0.y * dt;
+    if is_blocked(terrain, Vec2::new(transform.translation.x, next_z), y) {
+        vel.0.y = 0.0;
+    } else {
+        transform.translation.z = next_z;
+    }
+
+    // Vertical motion: the bee rests on the ground under it unless it is jumping.
+    let xz = Vec2::new(transform.translation.x, transform.translation.z);
+    let rest = rest_height(terrain, xz);
+    let grounded = transform.translation.y <= rest + 0.01 && vertical.0 <= 0.0;
+    if grounded
+        && (keyboard.just_pressed(KeyCode::ShiftLeft) || keyboard.just_pressed(KeyCode::ShiftRight))
+    {
+        vertical.0 = JUMP_SPEED;
+    }
+
+    let airborne = vertical.0 > 0.0 || transform.translation.y > rest + 0.01;
+    if airborne {
+        vertical.0 -= GRAVITY * dt;
+        transform.translation.y += vertical.0 * dt;
+        if transform.translation.y <= rest {
+            transform.translation.y = rest;
+            vertical.0 = 0.0;
+        }
+    } else {
+        transform.translation.y = rest;
+        vertical.0 = 0.0;
+    }
+}
+
+/// Lowest height the bee can fly at over `xz`: flight altitude, or on top of a stack.
+fn rest_height(terrain: Option<&TerrainHeights>, xz: Vec2) -> f32 {
+    let ground = terrain.map_or(0.0, |t| t.ground_top(xz));
+    PLAYER_ALTITUDE.max(ground + WALL_CLEARANCE)
+}
+
+/// Returns `true` when the bee at height `y` would hit a stacked tile at `xz`.
+fn is_blocked(terrain: Option<&TerrainHeights>, xz: Vec2, y: f32) -> bool {
+    terrain.is_some_and(|t| t.ground_top(xz) + WALL_CLEARANCE > y + 0.5)
 }
 
 /// Rotate the bee toward the mouse cursor and fire a projectile on left-click.
@@ -343,11 +411,21 @@ fn player_aim_and_shoot(
         return;
     }
 
-    let Ok(window) = windows.get_single() else { return; };
-    let Ok((camera, cam_transform)) = camera_query.get_single() else { return; };
-    let Ok((mut player_tf, _vel)) = player_query.get_single_mut() else { return; };
-    let Some(cursor_pos) = window.cursor_position() else { return; };
-    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else { return; };
+    let Ok(window) = windows.get_single() else {
+        return;
+    };
+    let Ok((camera, cam_transform)) = camera_query.get_single() else {
+        return;
+    };
+    let Ok((mut player_tf, _vel)) = player_query.get_single_mut() else {
+        return;
+    };
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+    let Ok(ray) = camera.viewport_to_world(cam_transform, cursor_pos) else {
+        return;
+    };
 
     // Intersect the camera ray with the horizontal plane at player altitude.
     let dir = ray.direction.as_vec3();
@@ -395,7 +473,11 @@ fn check_lava(
         return;
     };
 
-    if lava.is_over_lava(world_to_plane(transform.translation)) && vel.0.length() < LAVA_MIN_SPEED {
+    let airborne = transform.translation.y > PLAYER_ALTITUDE + LAVA_SAFE_HEIGHT;
+    if !airborne
+        && lava.is_over_lava(world_to_plane(transform.translation))
+        && vel.0.length() < LAVA_MIN_SPEED
+    {
         respawn_state.mode = RespawnMode::FadingOut;
         respawn_state.alpha = 0.0;
     }
@@ -417,10 +499,7 @@ fn update_speed_hud(
 }
 
 /// Update the enemies-defeated counter in the HUD every frame.
-fn update_score_hud(
-    score: Res<Score>,
-    mut hud_query: Query<&mut Text, With<ScoreHud>>,
-) {
+fn update_score_hud(score: Res<Score>, mut hud_query: Query<&mut Text, With<ScoreHud>>) {
     let Ok(mut text) = hud_query.get_single_mut() else {
         return;
     };

@@ -26,6 +26,14 @@ Explore floating islands in an isometric world and zap things with your water gu
 
 ## Development
 
+### Art assets
+
+The terrain uses Kenney's
+[Isometric Tiles Landscape](https://kenney.nl/assets/isometric-tiles-landscape)
+pack, released under CC0. The game includes the source images and license in
+`assets/kenney/isometric-landscape/`; credit to Kenney is appreciated but not
+required.
+
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) stable toolchain

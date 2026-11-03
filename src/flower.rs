@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::iso::{grid_to_world, world_to_plane};
-use crate::player::{BeeVelocity, Player, PLAYER_RADIUS, PLAYER_SPAWN, RespawnMode, RespawnState};
+use crate::player::{BeeVelocity, Player, RespawnMode, RespawnState, PLAYER_RADIUS, PLAYER_SPAWN};
 
 pub struct FlowerPlugin;
 
@@ -73,15 +73,53 @@ fn tile_hash(gx: i32, gy: i32) -> u32 {
 // Grid positions for non-red flowers
 // ---------------------------------------------------------------------------
 
-const NON_RED_POSITIONS: &[(i32, i32)] = &[
-    (3, 2), (-3, 4), (5, -2), (8, 6), (-6, -3), (10, 1), (-8, 7), (2, 10), (-4, -8), (7, -5),
-    (0, 5), (4, -4), (-5, 2), (6, 8), (-9, 1), (41, 36), (44, 39), (40, 40), (45, 36), (43, 40),
-    (38, 39), (42, 42), (46, 38), (53, -38), (56, -41), (58, -37), (54, -44), (50, -40),
-    (-49, -45), (-46, -48), (-52, -43), (-44, -46), (-50, -40), (-43, 46), (-46, 50), (6, -55),
-    (3, -53), (7, -52), (10, 5), (20, 10), (30, 18), (-10, -10), (-20, -20),
+pub(crate) const NON_RED_POSITIONS: &[(i32, i32)] = &[
+    (3, 2),
+    (-3, 4),
+    (5, -2),
+    (8, 6),
+    (-6, -3),
+    (10, 1),
+    (-8, 7),
+    (2, 10),
+    (-4, -8),
+    (7, -5),
+    (0, 5),
+    (4, -4),
+    (-5, 2),
+    (6, 8),
+    (-9, 1),
+    (41, 36),
+    (44, 39),
+    (40, 40),
+    (45, 36),
+    (43, 40),
+    (38, 39),
+    (42, 42),
+    (46, 38),
+    (53, -38),
+    (56, -41),
+    (58, -37),
+    (54, -44),
+    (50, -40),
+    (-49, -45),
+    (-46, -48),
+    (-52, -43),
+    (-44, -46),
+    (-50, -40),
+    (-43, 46),
+    (-46, 50),
+    (6, -55),
+    (3, -53),
+    (7, -52),
+    (10, 5),
+    (20, 10),
+    (30, 18),
+    (-10, -10),
+    (-20, -20),
 ];
 
-const RED_FLOWER_POS: (i32, i32) = (5, -58);
+pub(crate) const RED_FLOWER_POS: (i32, i32) = (5, -58);
 
 fn emissive_material(
     materials: &mut Assets<StandardMaterial>,
@@ -116,8 +154,11 @@ fn spawn_flower_cluster(
     parent.spawn((
         Mesh3d(stem_mesh.clone()),
         MeshMaterial3d(stem_material),
-        Transform::from_xyz(0.0, -(STEM_HEIGHT * 0.5), 0.0)
-            .with_scale(Vec3::new(1.0, STEM_HEIGHT / STEM_MESH_HEIGHT, 1.0)),
+        Transform::from_xyz(0.0, -(STEM_HEIGHT * 0.5), 0.0).with_scale(Vec3::new(
+            1.0,
+            STEM_HEIGHT / STEM_MESH_HEIGHT,
+            1.0,
+        )),
     ));
 
     for offset in [
@@ -142,8 +183,11 @@ fn spawn_flower_cluster(
     parent.spawn((
         Mesh3d(ground_glow_mesh.clone()),
         MeshMaterial3d(ground_glow_material),
-        Transform::from_xyz(0.0, FLOWER_GROUND_GLOW_HEIGHT_OFFSET, 0.0)
-            .with_scale(Vec3::new(ground_glow_radius, 1.0, ground_glow_radius)),
+        Transform::from_xyz(0.0, FLOWER_GROUND_GLOW_HEIGHT_OFFSET, 0.0).with_scale(Vec3::new(
+            ground_glow_radius,
+            1.0,
+            ground_glow_radius,
+        )),
     ));
 
     parent.spawn((

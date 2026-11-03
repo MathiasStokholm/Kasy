@@ -19,6 +19,7 @@ bevy = { version = "0.15", default-features = false, features = [
     "bevy_ui",
     "bevy_winit",
     "default_font",
+    "png",
     # Linux windowing (X11); also works on CI runners
     "x11",
     # WebGPU renderer – supported by Firefox 120+, Chrome 113+, and Edge 113+

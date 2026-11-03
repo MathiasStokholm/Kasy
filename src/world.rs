@@ -1,8 +1,56 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use bevy::prelude::*;
+use bevy::render::{
+    mesh::{Indices, PrimitiveTopology},
+    render_asset::RenderAssetUsages,
+};
 
-use crate::iso::{grid_to_world, world_to_grid, TILE_HEIGHT, TILE_WIDTH};
+use crate::enemy::SPAWN_POINTS;
+use crate::flower::{NON_RED_POSITIONS, RED_FLOWER_POS};
+use crate::iso::{grid_to_world, world_to_grid, TILE_SIZE};
+
+/// Peak positions of mountains, placed on island interiors away from bridges.
+const MOUNTAIN_PEAKS: &[(i32, i32)] = &[(50, 44), (66, -36), (-56, -40), (-4, -52)];
+/// Extra stacked layers at a mountain peak.
+const MOUNTAIN_PEAK_LAYERS: u32 = 3;
+/// Grid distance per stacked layer step as you move away from a peak.
+const MOUNTAIN_STEP: f32 = 1.6;
+
+/// Compute how many layers each tile has.  Mountains are built from the
+/// peaks outward.  Bridges, lava, and cells that hold flowers or enemy spawns
+/// stay flat so gameplay placement is unaffected.
+fn generate_heights(tiles: &[(i32, i32, TileType)]) -> HashMap<(i32, i32), u32> {
+    let reserved: HashSet<(i32, i32)> = NON_RED_POSITIONS
+        .iter()
+        .copied()
+        .chain(std::iter::once(RED_FLOWER_POS))
+        .chain(SPAWN_POINTS.iter().copied())
+        .collect();
+
+    tiles
+        .iter()
+        .map(|&(gx, gy, tile_type)| {
+            let mut extra = 0u32;
+            let allowed = !matches!(
+                tile_type,
+                TileType::Bridge | TileType::Lava | TileType::Volcanic
+            ) && !reserved.contains(&(gx, gy));
+            if allowed {
+                for &(px, py) in MOUNTAIN_PEAKS {
+                    let dx = (gx - px) as f32;
+                    let dy = (gy - py) as f32;
+                    let steps = ((dx * dx + dy * dy).sqrt() / MOUNTAIN_STEP).floor();
+                    let layers = MOUNTAIN_PEAK_LAYERS as f32 - steps;
+                    if layers > 0.0 {
+                        extra = extra.max(layers as u32);
+                    }
+                }
+            }
+            ((gx, gy), 1 + extra)
+        })
+        .collect()
+}
 
 pub struct WorldPlugin;
 
@@ -25,6 +73,26 @@ pub struct LavaTiles(pub HashSet<(i32, i32)>);
 /// Used by enemies to check they remain on the islands.
 #[derive(Resource, Default)]
 pub struct WorldTiles(pub HashSet<(i32, i32)>);
+
+/// Number of stacked layers under each tile position.  Flat tiles have 1 layer;
+/// mountains have more.  Missing tiles are absent from the map.
+#[derive(Resource, Default)]
+pub struct TerrainHeights(pub HashMap<(i32, i32), u32>);
+
+impl TerrainHeights {
+    /// Height of the top surface of the tile under `world_pos`, or 0 when there is no tile.
+    pub fn ground_top(&self, world_pos: Vec2) -> f32 {
+        let (gx, gy) = world_to_grid(world_pos);
+        self.0
+            .get(&(gx, gy))
+            .map_or(0.0, |layers| *layers as f32 * TILE_THICKNESS)
+    }
+
+    /// Returns `true` when the tile under `world_pos` is stacked above flat ground.
+    pub fn is_raised(&self, world_pos: Vec2) -> bool {
+        self.ground_top(world_pos) > TILE_THICKNESS
+    }
+}
 
 impl LavaTiles {
     /// Returns `true` when `world_pos` is above at least one lava/volcanic tile.
@@ -58,9 +126,7 @@ fn is_over_set(set: &HashSet<(i32, i32)>, world_pos: Vec2) -> bool {
 // Tile types
 // ---------------------------------------------------------------------------
 
-const TILE_THICKNESS: f32 = 9.0;
-const BRIDGE_THICKNESS: f32 = 4.0;
-const TILE_SCALE: f32 = 0.90;
+pub(crate) const TILE_THICKNESS: f32 = 9.0;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum TileType {
@@ -79,39 +145,87 @@ pub enum TileType {
 }
 
 impl TileType {
-    fn color(self) -> Color {
-        match self {
-            TileType::Grass => Color::srgb(0.18, 0.28, 0.10),
-            TileType::Dirt => Color::srgb(0.20, 0.14, 0.07),
-            TileType::Rock => Color::srgb(0.22, 0.22, 0.24),
-            TileType::Jungle => Color::srgb(0.08, 0.20, 0.08),
-            TileType::JungleFloor => Color::srgb(0.06, 0.12, 0.05),
-            TileType::Desert => Color::srgb(0.25, 0.21, 0.12),
-            TileType::DesertRock => Color::srgb(0.22, 0.15, 0.10),
-            TileType::Tundra => Color::srgb(0.20, 0.23, 0.28),
-            TileType::Snow => Color::srgb(0.32, 0.34, 0.40),
-            TileType::Volcanic => Color::srgb(0.09, 0.06, 0.06),
-            TileType::Lava => Color::srgb(0.25, 0.08, 0.02),
-            TileType::Bridge => Color::srgb(0.16, 0.11, 0.06),
-        }
+    fn sprite(
+        self,
+        grass: &Handle<Image>,
+        sand: &Handle<Image>,
+        road: &Handle<Image>,
+    ) -> (Handle<Image>, Color) {
+        let (image, tint) = match self {
+            TileType::Grass => (grass, Color::WHITE),
+            TileType::Dirt | TileType::Desert => (sand, Color::WHITE),
+            TileType::Rock | TileType::Bridge => (road, Color::WHITE),
+            TileType::Jungle => (grass, Color::srgb(0.74, 1.0, 0.64)),
+            TileType::JungleFloor => (grass, Color::srgb(0.58, 0.84, 0.48)),
+            TileType::DesertRock => (sand, Color::srgb(0.88, 0.72, 0.55)),
+            TileType::Tundra | TileType::Snow => (road, Color::srgb(0.82, 0.92, 1.0)),
+            TileType::Volcanic => (road, Color::srgb(0.72, 0.48, 0.38)),
+            TileType::Lava => (road, Color::srgb(1.0, 0.38, 0.16)),
+        };
+        (image.clone(), tint)
     }
+}
 
-    fn roughness(self) -> f32 {
-        match self {
-            TileType::Snow | TileType::Tundra => 0.65,
-            TileType::Lava => 0.45,
-            TileType::Rock | TileType::Volcanic => 0.95,
-            _ => 0.9,
-        }
-    }
+fn terrain_mesh() -> Mesh {
+    let h = TILE_SIZE * 0.5;
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_POSITION,
+        vec![[h, 0.0, -h], [h, 0.0, h], [-h, 0.0, h], [-h, 0.0, -h]],
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 1.0, 0.0]; 4])
+    .with_inserted_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        vec![
+            [0.5, 0.0],
+            [1.0, 1.0 / 3.0],
+            [0.5, 2.0 / 3.0],
+            [0.0, 1.0 / 3.0],
+        ],
+    )
+    .with_inserted_indices(Indices::U32(vec![0, 2, 1, 0, 3, 2]))
+}
 
-    fn thickness(self) -> f32 {
-        if matches!(self, TileType::Bridge) {
-            BRIDGE_THICKNESS
-        } else {
-            TILE_THICKNESS
-        }
+/// Side faces hanging below a tile's top surface, giving islands a cliff edge.
+/// Interior faces between neighbouring tiles are hidden inside the island.
+fn terrain_skirt_mesh() -> Mesh {
+    let h = TILE_SIZE * 0.5;
+    let corners = [
+        Vec3::new(h, 0.0, -h),
+        Vec3::new(h, 0.0, h),
+        Vec3::new(-h, 0.0, h),
+        Vec3::new(-h, 0.0, -h),
+    ];
+    let mut positions: Vec<[f32; 3]> = Vec::new();
+    let mut normals: Vec<[f32; 3]> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    for i in 0..4 {
+        let a = corners[i];
+        let b = corners[(i + 1) % 4];
+        let normal = ((a + b) * 0.5 * Vec3::new(1.0, 0.0, 1.0)).normalize();
+        let base = positions.len() as u32;
+        positions.extend(
+            [
+                a,
+                b,
+                b - Vec3::Y * TILE_THICKNESS,
+                a - Vec3::Y * TILE_THICKNESS,
+            ]
+            .map(|v| v.to_array()),
+        );
+        normals.extend([normal.to_array(); 4]);
+        indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
     }
+    Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    )
+    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
+    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
+    .with_inserted_indices(Indices::U32(indices))
 }
 
 // ---------------------------------------------------------------------------
@@ -176,8 +290,22 @@ fn generate_world() -> Vec<(i32, i32, TileType)> {
     let mut tiles = Vec::new();
 
     island_circle(&mut tiles, 0, 0, 280, TileType::Grass, TileType::Dirt);
-    island_circle(&mut tiles, 42, 38, 220, TileType::JungleFloor, TileType::Jungle);
-    island_circle(&mut tiles, 55, -40, 180, TileType::Desert, TileType::DesertRock);
+    island_circle(
+        &mut tiles,
+        42,
+        38,
+        220,
+        TileType::JungleFloor,
+        TileType::Jungle,
+    );
+    island_circle(
+        &mut tiles,
+        55,
+        -40,
+        180,
+        TileType::Desert,
+        TileType::DesertRock,
+    );
     island_circle(&mut tiles, -48, -44, 240, TileType::Snow, TileType::Tundra);
     island_circle(&mut tiles, -44, 48, 160, TileType::Volcanic, TileType::Lava);
     island_circle(&mut tiles, 5, -55, 140, TileType::Rock, TileType::Dirt);
@@ -378,8 +506,24 @@ fn setup_world(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
     let tiles = generate_world();
+    let grass = asset_server.load("kenney/isometric-landscape/Grass.png");
+    let sand = asset_server.load("kenney/isometric-landscape/Sand.png");
+    let road = asset_server.load("kenney/isometric-landscape/Road.png");
+    let tile_mesh = meshes.add(terrain_mesh());
+    let skirt_mesh = meshes.add(terrain_skirt_mesh());
+    let skirt_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.42, 0.30, 0.18),
+        perceptual_roughness: 0.95,
+        ..default()
+    });
+    let stone_skirt_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.46, 0.46, 0.50),
+        perceptual_roughness: 0.95,
+        ..default()
+    });
 
     let lava_set: HashSet<(i32, i32)> = tiles
         .iter()
@@ -388,10 +532,7 @@ fn setup_world(
         .collect();
     commands.insert_resource(LavaTiles(lava_set));
 
-    let tile_set: HashSet<(i32, i32)> = tiles
-        .iter()
-        .map(|(gx, gy, _)| (*gx, *gy))
-        .collect();
+    let tile_set: HashSet<(i32, i32)> = tiles.iter().map(|(gx, gy, _)| (*gx, *gy)).collect();
     commands.insert_resource(WorldTiles(tile_set));
 
     commands.spawn((
@@ -404,26 +545,40 @@ fn setup_world(
         Transform::from_xyz(-180.0, 260.0, 120.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
+    let heights = generate_heights(&tiles);
+
     for &(gx, gy, tile_type) in &tiles {
         let pos = grid_to_world(gx, gy);
-        let thickness = tile_type.thickness();
-        let mesh = meshes.add(Cuboid::new(
-            TILE_WIDTH * TILE_SCALE,
-            thickness,
-            TILE_HEIGHT * TILE_SCALE,
-        ));
+        let layers = heights.get(&(gx, gy)).copied().unwrap_or(1);
+        let top = TILE_THICKNESS * layers as f32;
+        let (image, tint) = tile_type.sprite(&grass, &sand, &road);
         let material = materials.add(StandardMaterial {
-            base_color: tile_type.color(),
-            perceptual_roughness: tile_type.roughness(),
-            metallic: 0.02,
+            base_color: tint,
+            base_color_texture: Some(image),
+            unlit: true,
+            cull_mode: None,
             ..default()
         });
-
         commands.spawn((
-            Mesh3d(mesh),
+            Mesh3d(tile_mesh.clone()),
             MeshMaterial3d(material),
-            Transform::from_xyz(pos.x, thickness * 0.5, pos.y),
+            Transform::from_xyz(pos.x, top, pos.y),
         ));
+        for layer in 0..layers {
+            let (mat, y) = if layer == 0 {
+                (skirt_material.clone(), TILE_THICKNESS)
+            } else {
+                (
+                    stone_skirt_material.clone(),
+                    TILE_THICKNESS * (layer + 1) as f32,
+                )
+            };
+            commands.spawn((
+                Mesh3d(skirt_mesh.clone()),
+                MeshMaterial3d(mat),
+                Transform::from_xyz(pos.x, y, pos.y),
+            ));
+        }
 
         spawn_decorations(
             &mut commands,
@@ -432,8 +587,9 @@ fn setup_world(
             gx,
             gy,
             tile_type,
-            thickness,
+            top,
             pos,
         );
     }
+    commands.insert_resource(TerrainHeights(heights));
 }

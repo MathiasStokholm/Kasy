@@ -13,9 +13,9 @@ pub struct CameraPlugin;
 /// Fraction of the distance to the player that the camera closes each frame.
 /// Lower values give a smoother (but lazier) follow; 1.0 snaps immediately.
 const CAMERA_FOLLOW_SPEED: f32 = 0.08;
-/// Offset chosen to keep the islands framed at a steep angle while still
-/// reading as the old isometric playfield, just with real 3D depth.
-const CAMERA_OFFSET: Vec3 = Vec3::new(-190.0, 180.0, 190.0);
+/// Classic 2:1 isometric view: 30° elevation from a corner (45° azimuth).
+/// Matches the 2:1 diamond tile art, so tile edges line up on screen.
+const CAMERA_OFFSET: Vec3 = Vec3::new(-223.0, 182.0, 223.0);
 const CAMERA_LOOK_HEIGHT: f32 = 14.0;
 const FLOWER_BLOOM: Bloom = Bloom {
     intensity: 0.04,
@@ -49,6 +49,10 @@ fn setup_camera(mut commands: Commands) {
             hdr: true,
             ..default()
         },
+        Projection::Orthographic(OrthographicProjection {
+            scale: 1.5,
+            ..OrthographicProjection::default_3d()
+        }),
         Tonemapping::ReinhardLuminance,
         FLOWER_BLOOM,
         Transform::from_translation(CAMERA_OFFSET)

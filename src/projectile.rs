@@ -51,9 +51,9 @@ impl Plugin for ProjectilePlugin {
 /// Spawn a new 3-D projectile for every received [`SpawnProjectile`] event.
 fn handle_spawn_projectile(
     mut commands: Commands,
-    mut meshes:   ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut events:   EventReader<SpawnProjectile>,
+    mut events: EventReader<SpawnProjectile>,
 ) {
     for event in events.read() {
         let velocity = Vec3::new(
@@ -62,13 +62,18 @@ fn handle_spawn_projectile(
             event.direction.y * PROJECTILE_SPEED,
         );
         commands.spawn((
-            Projectile { velocity, lifetime: PROJECTILE_LIFETIME },
-            Mesh3d(meshes.add(
-                Sphere::new(PROJECTILE_RADIUS)
-                    .mesh()
-                    .ico(2)
-                    .expect("projectile ico sphere should build"),
-            )),
+            Projectile {
+                velocity,
+                lifetime: PROJECTILE_LIFETIME,
+            },
+            Mesh3d(
+                meshes.add(
+                    Sphere::new(PROJECTILE_RADIUS)
+                        .mesh()
+                        .ico(2)
+                        .expect("projectile ico sphere should build"),
+                ),
+            ),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color: Color::srgba(0.30, 0.70, 1.00, 0.90),
                 emissive: LinearRgba::rgb(0.5, 1.5, 3.0),
@@ -82,21 +87,15 @@ fn handle_spawn_projectile(
 }
 
 /// Advance every projectile along its velocity vector each frame.
-fn move_projectiles(
-    mut query: Query<(&mut Transform, &mut Projectile)>,
-    time: Res<Time>,
-) {
+fn move_projectiles(mut query: Query<(&mut Transform, &mut Projectile)>, time: Res<Time>) {
     for (mut transform, mut projectile) in &mut query {
         transform.translation += projectile.velocity * time.delta_secs();
-        projectile.lifetime   -= time.delta_secs();
+        projectile.lifetime -= time.delta_secs();
     }
 }
 
 /// Despawn projectiles whose lifetime has expired.
-fn cleanup_projectiles(
-    mut commands: Commands,
-    query: Query<(Entity, &Projectile)>,
-) {
+fn cleanup_projectiles(mut commands: Commands, query: Query<(Entity, &Projectile)>) {
     for (entity, projectile) in &query {
         if projectile.lifetime <= 0.0 {
             commands.entity(entity).despawn_recursive();
@@ -110,7 +109,7 @@ fn check_projectile_hits(
     mut commands: Commands,
     mut score: ResMut<Score>,
     projectile_query: Query<(Entity, &Transform), With<Projectile>>,
-    enemy_query:      Query<(Entity, &Transform), With<Enemy>>,
+    enemy_query: Query<(Entity, &Transform), With<Enemy>>,
 ) {
     for (proj_entity, proj_tf) in &projectile_query {
         let proj_xz = Vec2::new(proj_tf.translation.x, proj_tf.translation.z);
